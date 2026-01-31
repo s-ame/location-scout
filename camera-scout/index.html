@@ -1154,6 +1154,22 @@
             </div>
             
             <div class="control-section">
+                <div class="section-title">iPhoneカメラ</div>
+                <div style="font-size: 10px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.5;">
+                    使用するiPhoneカメラのレンズを選択してください。フレーム計算に影響します。
+                </div>
+                <div class="preset-grid" id="camera-zoom-buttons">
+                    <button class="preset-btn" data-zoom="0.5x">0.5x</button>
+                    <button class="preset-btn active" data-zoom="1x">1x</button>
+                    <button class="preset-btn" data-zoom="2x">2x</button>
+                    <button class="preset-btn" data-zoom="3x">3x</button>
+                </div>
+                <div style="font-size: 10px; color: var(--text-secondary); margin-top: 8px; text-align: center;">
+                    現在のFOV: <span id="iphone-fov-display">63</span>° (35mm換算: <span id="iphone-equiv-display">26</span>mm)
+                </div>
+            </div>
+
+            <div class="control-section">
                 <div class="section-title">センサーサイズ</div>
                 <div class="input-group">
                     <select id="sensor-size">
@@ -1294,6 +1310,10 @@
             headingHistorySize: 5,
             // Magnetic declination (will be calculated based on location)
             magneticDeclination: 7.5, // Default for Tokyo area (degrees East)
+            // iPhone camera settings
+            iPhoneCameraFOV: 63, // Current camera FOV (degrees)
+            iPhoneCameraZoom: '1x', // Current zoom level
+            availableCameras: [], // Available camera devices
         };
 
         // Sensor size configurations (width x height in mm)
@@ -1305,6 +1325,15 @@
             'micro-43': { width: 17.3, height: 13, name: 'M4/3' },
             'medium-format': { width: 43.8, height: 32.9, name: 'MF' },
             '1-inch': { width: 13.2, height: 8.8, name: '1"' },
+        };
+
+        // iPhone camera configurations (FOV in degrees, 35mm equivalent focal length)
+        const iPhoneCameras = {
+            '0.5x': { fov: 120, equiv: 13, name: '超広角 0.5x' },
+            '1x': { fov: 63, equiv: 26, name: '広角 1x' },
+            '2x': { fov: 31, equiv: 52, name: '望遠 2x' },
+            '3x': { fov: 23, equiv: 77, name: '望遠 3x' },
+            '5x': { fov: 15, equiv: 120, name: '望遠 5x' },
         };
 
         // DOM Elements
@@ -1320,12 +1349,23 @@
         const compassNeedle = compass.querySelector('.compass-needle');
 
         // Initialize camera with high resolution
-        async function initCamera() {
+        async function initCamera(zoomLevel = '1x') {
             try {
                 // Check if mediaDevices is supported
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                     throw new Error('このブラウザはカメラAPIに対応していません');
                 }
+
+                // Stop existing stream if any
+                if (state.cameraStream) {
+                    state.cameraStream.getTracks().forEach(track => track.stop());
+                }
+
+                // Get available cameras
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                state.availableCameras = videoDevices;
+                console.log('Available cameras:', videoDevices.length);
 
                 // Try high resolution first (4K > 1080p > fallback)
                 let stream;
@@ -1336,15 +1376,34 @@
                     {}  // Any resolution
                 ];
 
+                // Calculate zoom constraint based on selected level
+                const zoomMap = { '0.5x': 0.5, '1x': 1, '2x': 2, '3x': 3, '5x': 5 };
+                const targetZoom = zoomMap[zoomLevel] || 1;
+
                 for (const resolution of resolutions) {
                     try {
-                        stream = await navigator.mediaDevices.getUserMedia({
+                        const constraints = {
                             video: {
                                 facingMode: 'environment',
                                 ...resolution
                             }
-                        });
+                        };
+
+                        stream = await navigator.mediaDevices.getUserMedia(constraints);
                         console.log('Camera resolution:', resolution.width?.ideal || 'auto');
+
+                        // Try to apply zoom if supported
+                        const track = stream.getVideoTracks()[0];
+                        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+
+                        if (capabilities.zoom) {
+                            const minZoom = capabilities.zoom.min || 1;
+                            const maxZoom = capabilities.zoom.max || 1;
+                            const clampedZoom = Math.max(minZoom, Math.min(maxZoom, targetZoom));
+                            await track.applyConstraints({ advanced: [{ zoom: clampedZoom }] });
+                            console.log(`Applied zoom: ${clampedZoom}x (requested: ${targetZoom}x)`);
+                        }
+
                         break;
                     } catch (e) {
                         console.log('Resolution not available:', resolution.width?.ideal || 'auto');
@@ -1356,7 +1415,11 @@
                     // Final fallback
                     stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 }
-                
+
+                // Update state with current camera settings
+                state.iPhoneCameraZoom = zoomLevel;
+                state.iPhoneCameraFOV = iPhoneCameras[zoomLevel]?.fov || 63;
+
                 cameraFeed.srcObject = stream;
                 state.cameraStream = stream;
                 
@@ -1474,8 +1537,8 @@
             const hFOV = calculateFOV(focalLength, effectiveSensorWidth);
             const vFOV = calculateFOV(focalLength, effectiveSensorHeight);
 
-            // iPhone camera FOV (approximate)
-            const iPhoneFOV = 63; // degrees (wide camera)
+            // iPhone camera FOV (based on selected lens)
+            const iPhoneFOV = state.iPhoneCameraFOV;
 
             // Calculate frame dimensions
             const scale = Math.tan((hFOV * Math.PI / 180) / 2) / Math.tan((iPhoneFOV * Math.PI / 180) / 2);
@@ -1700,9 +1763,9 @@
             document.getElementById('debug-azimuth').textContent = azimuth.toFixed(1);
             document.getElementById('debug-elevation').textContent = elevation.toFixed(1);
 
-            // iPhone camera FOV (main wide camera)
-            const hFOV = 75; // horizontal FOV in degrees
-            const vFOV = 60; // vertical FOV in degrees
+            // iPhone camera FOV (based on selected lens)
+            const hFOV = state.iPhoneCameraFOV; // horizontal FOV in degrees
+            const vFOV = hFOV * 0.75; // approximate vertical FOV (4:3 aspect ratio)
 
             // Calculate relative bearing (sun position relative to where camera is pointing)
             let relativeBearing = azimuth - state.heading;
@@ -1793,9 +1856,9 @@
 
             if (!state.showTrajectory || !state.hasCompass) return;
 
-            // iPhone camera FOV
-            const hFOV = 75;
-            const vFOV = 60;
+            // iPhone camera FOV (based on selected lens)
+            const hFOV = state.iPhoneCameraFOV;
+            const vFOV = hFOV * 0.75;
 
             // Calculate sun positions throughout the day
             const points = [];
@@ -1863,27 +1926,50 @@
             trajectoryCtx.stroke();
             trajectoryCtx.setLineDash([]);
 
-            // Draw hour markers
-            trajectoryCtx.font = '11px JetBrains Mono';
+            // Draw hour markers - always show all hours that are above horizon
+            trajectoryCtx.font = 'bold 12px JetBrains Mono';
             trajectoryCtx.textAlign = 'center';
             trajectoryCtx.textBaseline = 'middle';
 
             for (const point of points) {
-                if (!point.inView || point.elevation < 0) continue;
+                if (point.elevation < 0) continue;
 
                 // Draw hour markers every hour
                 if (point.minutes % 60 === 0) {
                     const hour = point.hour;
+                    const isCurrentHour = Math.abs(point.minutes - state.currentTime) < 30;
 
-                    // Draw small circle
+                    // Calculate if point is on screen
+                    const onScreen = point.x >= 0 && point.x <= sunTrajectory.width &&
+                                    point.y >= 0 && point.y <= sunTrajectory.height;
+
+                    if (!onScreen) continue;
+
+                    // Draw outer glow for visibility
                     trajectoryCtx.beginPath();
-                    trajectoryCtx.arc(point.x, point.y, point.isCurrentTime ? 8 : 5, 0, Math.PI * 2);
-                    trajectoryCtx.fillStyle = point.isCurrentTime ? 'rgba(255, 215, 0, 0.9)' : 'rgba(255, 215, 0, 0.6)';
+                    trajectoryCtx.arc(point.x, point.y, isCurrentHour ? 14 : 10, 0, Math.PI * 2);
+                    trajectoryCtx.fillStyle = isCurrentHour ? 'rgba(255, 215, 0, 0.3)' : 'rgba(255, 215, 0, 0.15)';
                     trajectoryCtx.fill();
 
-                    // Draw hour label
-                    trajectoryCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-                    trajectoryCtx.fillText(`${hour}:00`, point.x, point.y - 15);
+                    // Draw main circle
+                    trajectoryCtx.beginPath();
+                    trajectoryCtx.arc(point.x, point.y, isCurrentHour ? 8 : 6, 0, Math.PI * 2);
+                    trajectoryCtx.fillStyle = isCurrentHour ? 'rgba(255, 215, 0, 1)' : 'rgba(255, 215, 0, 0.8)';
+                    trajectoryCtx.fill();
+
+                    // Draw hour label with background for readability
+                    const labelText = `${hour}:00`;
+                    const textWidth = trajectoryCtx.measureText(labelText).width;
+
+                    // Background pill
+                    trajectoryCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                    trajectoryCtx.beginPath();
+                    trajectoryCtx.roundRect(point.x - textWidth / 2 - 6, point.y - 28, textWidth + 12, 18, 4);
+                    trajectoryCtx.fill();
+
+                    // Text
+                    trajectoryCtx.fillStyle = isCurrentHour ? 'rgba(255, 215, 0, 1)' : 'rgba(255, 255, 255, 0.95)';
+                    trajectoryCtx.fillText(labelText, point.x, point.y - 19);
                 }
             }
         }
@@ -1950,6 +2036,27 @@
                 // Apply magnetic declination for true north
                 rawHeading = (rawHeading + state.magneticDeclination + 360) % 360;
                 state.hasCompass = true;
+            }
+
+            // LANDSCAPE MODE CORRECTION:
+            // When phone is in landscape mode (rotated 90 degrees), the compass heading
+            // needs to be adjusted because the camera is now pointing in a different direction
+            // than the "top" of the phone.
+            // Check if we're in landscape mode by looking at gamma (left-right tilt)
+            // In landscape-right (home button on right): gamma is around -90
+            // In landscape-left (home button on left): gamma is around +90
+            const isLandscape = window.innerWidth > window.innerHeight;
+            if (isLandscape) {
+                // Detect which landscape orientation
+                // gamma > 45 means landscape-left (home button on left)
+                // gamma < -45 means landscape-right (home button on right)
+                if (state.gamma > 45) {
+                    // Landscape-left: camera points 90° counter-clockwise from phone top
+                    rawHeading = (rawHeading + 90) % 360;
+                } else if (state.gamma < -45) {
+                    // Landscape-right: camera points 90° clockwise from phone top
+                    rawHeading = (rawHeading - 90 + 360) % 360;
+                }
             }
 
             // Apply smoothing to reduce jitter
@@ -2113,6 +2220,51 @@
                 const [w, h] = e.target.dataset.aspect.split(':').map(Number);
                 state.aspectRatio = { w, h };
                 updateFOV();
+            });
+        });
+
+        // Camera zoom buttons
+        document.querySelectorAll('[data-zoom]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const zoom = e.target.dataset.zoom;
+
+                // Update button states
+                document.querySelectorAll('[data-zoom]').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+
+                // Update state and camera
+                state.iPhoneCameraZoom = zoom;
+                state.iPhoneCameraFOV = iPhoneCameras[zoom]?.fov || 63;
+
+                // Update display
+                document.getElementById('iphone-fov-display').textContent = state.iPhoneCameraFOV;
+                document.getElementById('iphone-equiv-display').textContent = iPhoneCameras[zoom]?.equiv || 26;
+
+                // Try to apply zoom to camera
+                if (state.cameraStream) {
+                    const track = state.cameraStream.getVideoTracks()[0];
+                    if (track) {
+                        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+                        if (capabilities.zoom) {
+                            const zoomMap = { '0.5x': 0.5, '1x': 1, '2x': 2, '3x': 3, '5x': 5 };
+                            const targetZoom = zoomMap[zoom] || 1;
+                            const minZoom = capabilities.zoom.min || 1;
+                            const maxZoom = capabilities.zoom.max || 1;
+                            const clampedZoom = Math.max(minZoom, Math.min(maxZoom, targetZoom));
+                            try {
+                                await track.applyConstraints({ advanced: [{ zoom: clampedZoom }] });
+                                console.log(`Applied zoom: ${clampedZoom}x`);
+                            } catch (err) {
+                                console.log('Zoom not supported:', err);
+                            }
+                        }
+                    }
+                }
+
+                // Update FOV overlay
+                updateFOV();
+                updateSunPosition();
+                updateSunTrajectory();
             });
         });
 
