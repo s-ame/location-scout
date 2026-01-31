@@ -803,8 +803,10 @@
 <body>
     <div id="loading">
         <div class="spinner"></div>
-        <div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 8px;">画面をタップしてください</div>
-        <div style="color: var(--text-secondary); font-size: 10px;">カメラへのアクセスを許可します</div>
+        <div style="color: var(--text-primary); font-size: 14px; margin-bottom: 12px; font-weight: 600;">タップして開始</div>
+        <div style="color: var(--text-secondary); font-size: 11px; line-height: 1.6;">
+            カメラ・位置情報・コンパスへの<br>アクセスを許可してください
+        </div>
     </div>
 
     <div id="camera-container">
@@ -993,10 +995,15 @@
                 const now = new Date();
                 return now.getHours() * 60 + now.getMinutes();
             })(),
-            deviceOrientation: { alpha: 0, beta: 0, gamma: 0 },
-            heading: 0,
+            // Device orientation - all angles in degrees
+            alpha: 0,      // Compass heading (0-360, 0=North)
+            beta: 0,       // Front-back tilt (-180 to 180, 0=vertical)
+            gamma: 0,      // Left-right tilt (-90 to 90)
+            heading: 0,    // True compass heading
+            hasCompass: false,
             latitude: 35.6762, // Default to Tokyo
             longitude: 139.6503,
+            timezoneOffset: new Date().getTimezoneOffset(), // minutes from UTC
         };
 
         // Sensor size configurations (width x height in mm)
@@ -1252,7 +1259,7 @@
             document.getElementById('sensor-display').textContent = state.sensorSize.name;
         }
 
-        // Calculate sun position (more accurate algorithm)
+        // NOAA Solar Calculator - More accurate sun position
         function calculateSunPosition(latitude, longitude, timeInMinutes) {
             const now = new Date();
             const year = now.getFullYear();
@@ -1260,147 +1267,168 @@
             const day = now.getDate();
             const hours = Math.floor(timeInMinutes / 60);
             const minutes = timeInMinutes % 60;
-            
-            // Create date object for the specified time
-            const date = new Date(year, month, day, hours, minutes, 0);
-            
-            // Julian day calculation
-            const JD = (date.getTime() / 86400000) + 2440587.5;
-            const JC = (JD - 2451545.0) / 36525.0;
-            
-            // Sun's geometric mean longitude (degrees)
-            const L0 = (280.46646 + JC * (36000.76983 + JC * 0.0003032)) % 360;
-            
-            // Sun's mean anomaly (degrees)
-            const M = (357.52911 + JC * (35999.05029 - 0.0001537 * JC)) % 360;
-            
-            // Equation of center
-            const C = Math.sin(M * Math.PI / 180) * (1.914602 - JC * (0.004817 + 0.000014 * JC)) +
-                     Math.sin(2 * M * Math.PI / 180) * (0.019993 - 0.000101 * JC) +
-                     Math.sin(3 * M * Math.PI / 180) * 0.000289;
-            
-            // Sun's true longitude
-            const sunLon = L0 + C;
-            
-            // Obliquity of the ecliptic
-            const epsilon = 23.439291 - JC * (0.0130042 + JC * (0.00000016 - JC * 0.000000504));
-            
-            // Sun's declination
-            const declination = Math.asin(Math.sin(epsilon * Math.PI / 180) * 
-                                         Math.sin(sunLon * Math.PI / 180)) * 180 / Math.PI;
-            
+
+            // Create date in local time
+            const localDate = new Date(year, month, day, hours, minutes, 0);
+
+            // Convert to UTC for calculations
+            const utcHours = hours + state.timezoneOffset / 60;
+
+            // Day of year
+            const start = new Date(year, 0, 0);
+            const diff = localDate - start;
+            const oneDay = 1000 * 60 * 60 * 24;
+            const dayOfYear = Math.floor(diff / oneDay);
+
+            // Fractional year (radians)
+            const gamma = (2 * Math.PI / 365) * (dayOfYear - 1 + (hours - 12) / 24);
+
             // Equation of time (minutes)
-            const eqTime = 4 * (L0 - 0.0057183 - M + C);
-            
-            // Hour angle (degrees)
-            const solarTime = (timeInMinutes + eqTime + 4 * longitude) % 1440;
-            const hourAngle = (solarTime / 4) - 180;
-            
-            // Convert to radians
+            const eqTime = 229.18 * (0.000075 + 0.001868 * Math.cos(gamma)
+                - 0.032077 * Math.sin(gamma) - 0.014615 * Math.cos(2 * gamma)
+                - 0.040849 * Math.sin(2 * gamma));
+
+            // Solar declination (radians)
+            const decl = 0.006918 - 0.399912 * Math.cos(gamma) + 0.070257 * Math.sin(gamma)
+                - 0.006758 * Math.cos(2 * gamma) + 0.000907 * Math.sin(2 * gamma)
+                - 0.002697 * Math.cos(3 * gamma) + 0.00148 * Math.sin(3 * gamma);
+
+            // True solar time (minutes)
+            const timeOffset = eqTime + 4 * longitude - state.timezoneOffset;
+            const trueSolarTime = timeInMinutes + timeOffset;
+
+            // Hour angle (degrees, then radians)
+            let ha = (trueSolarTime / 4) - 180;
+            if (ha < -180) ha += 360;
+            if (ha > 180) ha -= 360;
+            const haRad = ha * Math.PI / 180;
+
+            // Latitude in radians
             const latRad = latitude * Math.PI / 180;
-            const decRad = declination * Math.PI / 180;
-            const haRad = hourAngle * Math.PI / 180;
-            
-            // Solar elevation angle
-            const elevation = Math.asin(
-                Math.sin(latRad) * Math.sin(decRad) +
-                Math.cos(latRad) * Math.cos(decRad) * Math.cos(haRad)
-            ) * 180 / Math.PI;
-            
-            // Solar azimuth angle
-            let azimuth = Math.atan2(
-                Math.sin(haRad),
-                Math.cos(haRad) * Math.sin(latRad) - Math.tan(decRad) * Math.cos(latRad)
-            ) * 180 / Math.PI;
-            
-            // Normalize azimuth to 0-360
-            azimuth = (azimuth + 180) % 360;
-            
-            return { 
-                azimuth: azimuth, 
-                elevation: elevation,
-                declination: declination
+
+            // Solar zenith angle
+            const cosZenith = Math.sin(latRad) * Math.sin(decl)
+                + Math.cos(latRad) * Math.cos(decl) * Math.cos(haRad);
+            const zenith = Math.acos(Math.max(-1, Math.min(1, cosZenith)));
+
+            // Solar elevation
+            const elevation = 90 - (zenith * 180 / Math.PI);
+
+            // Solar azimuth
+            let azimuth;
+            const sinAzimuth = -Math.sin(haRad) * Math.cos(decl) / Math.sin(zenith);
+            const cosAzimuth = (Math.sin(latRad) * cosZenith - Math.sin(decl))
+                / (Math.cos(latRad) * Math.sin(zenith));
+
+            azimuth = Math.atan2(sinAzimuth, cosAzimuth) * 180 / Math.PI;
+
+            // Normalize to 0-360 (0 = North, 90 = East, 180 = South, 270 = West)
+            azimuth = (azimuth + 360) % 360;
+
+            return {
+                azimuth: azimuth,
+                elevation: elevation
             };
         }
 
-        // Update sun indicator position with AR
+        // Update sun indicator position with AR - uses device sensors
         function updateSunPosition() {
             if (!state.showSun) {
                 sunIndicator.style.display = 'none';
                 return;
             }
-            
+
             sunIndicator.style.display = 'block';
-            
-            // Calculate actual sun position for current or simulated time
+
+            // Calculate sun position for current or simulated time
             const { azimuth, elevation } = calculateSunPosition(
                 state.latitude,
                 state.longitude,
                 state.currentTime
             );
-            
+
             // Update debug display
             document.getElementById('debug-azimuth').textContent = azimuth.toFixed(1);
             document.getElementById('debug-elevation').textContent = elevation.toFixed(1);
-            
-            // AR: Calculate position relative to device heading
-            // Normalize angles to -180 to 180
+
+            // iPhone camera FOV (main wide camera)
+            const hFOV = 75; // horizontal FOV in degrees
+            const vFOV = 60; // vertical FOV in degrees
+
+            // Calculate relative bearing (sun position relative to where camera is pointing)
             let relativeBearing = azimuth - state.heading;
-            if (relativeBearing > 180) relativeBearing -= 360;
-            if (relativeBearing < -180) relativeBearing += 360;
-            
-            // iPhone camera horizontal FOV (approximate)
-            const hFOV = 63; // degrees
-            const vFOV = 48; // degrees (approximate)
-            
-            // Check if sun is within camera view
-            const isInHorizontalView = Math.abs(relativeBearing) < hFOV / 2;
-            const isAboveHorizon = elevation > -5; // Show slightly below horizon
-            
-            if (isInHorizontalView && isAboveHorizon) {
-                // Map to screen coordinates
-                // Horizontal position based on bearing
+            // Normalize to -180 to 180
+            while (relativeBearing > 180) relativeBearing -= 360;
+            while (relativeBearing < -180) relativeBearing += 360;
+
+            // Device tilt compensation:
+            // beta = 0 means phone is vertical (camera pointing at horizon)
+            // beta = 90 means phone is flat (camera pointing up)
+            // beta = -90 means phone is flat face down
+            // When phone is vertical (beta~0), camera sees horizon at center
+            // The camera's "look angle" above horizon = 90 - beta
+            const cameraLookAngle = 90 - state.beta;
+
+            // Relative elevation: sun elevation minus where camera is looking
+            const relativeElevation = elevation - cameraLookAngle;
+
+            // Check if sun is in view
+            const isInHorizontalView = Math.abs(relativeBearing) <= hFOV / 2;
+            const isInVerticalView = Math.abs(relativeElevation) <= vFOV / 2;
+            const sunInView = isInHorizontalView && isInVerticalView;
+
+            if (sunInView) {
+                // Map relative angles to screen position
+                // X: bearing to horizontal position (left=-hFOV/2, right=+hFOV/2)
                 const xRatio = relativeBearing / (hFOV / 2);
                 const x = window.innerWidth / 2 + (xRatio * window.innerWidth / 2);
-                
-                // Vertical position based on elevation
-                // Map elevation angle to screen position
-                // Assume camera is level: elevation 0° = horizon (center)
-                // elevation 45° = top area, elevation -5° = bottom
-                const yRatio = -elevation / (vFOV / 2);
+
+                // Y: elevation to vertical position (up=+, screen up=-y)
+                const yRatio = -relativeElevation / (vFOV / 2);
                 const y = window.innerHeight / 2 + (yRatio * window.innerHeight / 2);
-                
-                sunIndicator.style.left = (x - 30) + 'px';
-                sunIndicator.style.top = (y - 30) + 'px';
-                
-                // Opacity based on elevation (brighter when higher)
-                const opacity = Math.min(0.9, Math.max(0.3, elevation / 60));
+
+                // Clamp to screen bounds
+                const clampedX = Math.max(30, Math.min(window.innerWidth - 30, x));
+                const clampedY = Math.max(30, Math.min(window.innerHeight - 30, y));
+
+                sunIndicator.style.left = (clampedX - 30) + 'px';
+                sunIndicator.style.top = (clampedY - 30) + 'px';
+
+                // Opacity based on actual elevation
+                const opacity = elevation > 0 ? Math.min(0.95, 0.5 + elevation / 90) : 0.3;
                 sunIndicator.style.opacity = opacity;
                 sunIndicator.style.transform = 'scale(1)';
             } else {
-                // Sun is out of view - show indicator at edge
-                sunIndicator.style.opacity = '0.3';
-                sunIndicator.style.transform = 'scale(0.7)';
-                
-                // Position at edge based on direction
+                // Sun is out of view - show edge indicator
+                sunIndicator.style.opacity = '0.4';
+                sunIndicator.style.transform = 'scale(0.6)';
+
+                // Calculate edge position
+                let edgeX, edgeY;
+
                 if (!isInHorizontalView) {
-                    if (relativeBearing > 0) {
-                        sunIndicator.style.left = 'calc(100vw - 80px)';
-                    } else {
-                        sunIndicator.style.left = '20px';
-                    }
-                    sunIndicator.style.top = '50%';
+                    // Sun is to the left or right
+                    edgeX = relativeBearing > 0 ? window.innerWidth - 50 : 20;
+                    // Vertical position based on relative elevation, clamped
+                    const yRatio = Math.max(-1, Math.min(1, -relativeElevation / (vFOV / 2)));
+                    edgeY = window.innerHeight / 2 + (yRatio * window.innerHeight / 3);
                 } else {
-                    // Below horizon
-                    sunIndicator.style.left = '50%';
-                    sunIndicator.style.top = 'calc(100vh - 200px)';
+                    // Sun is above or below
+                    edgeY = relativeElevation > 0 ? 30 : window.innerHeight - 120;
+                    // Horizontal position based on bearing
+                    const xRatio = relativeBearing / (hFOV / 2);
+                    edgeX = window.innerWidth / 2 + (xRatio * window.innerWidth / 3);
                 }
+
+                sunIndicator.style.left = edgeX + 'px';
+                sunIndicator.style.top = edgeY + 'px';
             }
-            
-            // Update HUD with azimuth and elevation
+
+            // Update HUD with sun info
             const direction = getCardinalDirection(azimuth);
-            document.getElementById('sun-position-display').textContent = 
-                `${azimuth.toFixed(0)}° ${direction} (高度${elevation.toFixed(0)}°)`;
+            const elevStr = elevation > 0 ? `↑${elevation.toFixed(0)}°` : `↓${Math.abs(elevation).toFixed(0)}°`;
+            document.getElementById('sun-position-display').textContent =
+                `${direction} ${azimuth.toFixed(0)}° ${elevStr}`;
         }
         
         // Get cardinal direction from azimuth
@@ -1410,49 +1438,127 @@
             return directions[index];
         }
 
-        // Handle device orientation
+        // Handle device orientation - iOS uses webkitCompassHeading for true north
         function handleOrientation(event) {
-            if (event.alpha !== null) {
-                state.heading = 360 - event.alpha;
-                compassNeedle.style.transform = `rotate(${event.alpha}deg)`;
-                document.getElementById('heading-display').textContent = state.heading.toFixed(0) + '°';
-                
-                // Update sun position in real-time for AR effect
+            // Store raw orientation values
+            state.alpha = event.alpha || 0;
+            state.beta = event.beta || 0;
+            state.gamma = event.gamma || 0;
+
+            // Get compass heading
+            // iOS provides webkitCompassHeading (degrees from magnetic north, 0-360)
+            // Android/other uses alpha (needs calibration)
+            if (event.webkitCompassHeading !== undefined && event.webkitCompassHeading !== null) {
+                // iOS: webkitCompassHeading is degrees from magnetic north
+                state.heading = event.webkitCompassHeading;
+                state.hasCompass = true;
+            } else if (event.alpha !== null) {
+                // Android/fallback: alpha is rotation around z-axis
+                // When absolute is true, alpha is relative to north
+                if (event.absolute) {
+                    state.heading = (360 - event.alpha) % 360;
+                } else {
+                    // Relative orientation - less accurate
+                    state.heading = (360 - event.alpha) % 360;
+                }
+                state.hasCompass = true;
+            }
+
+            // Update compass display
+            const compassRotation = state.heading;
+            compassNeedle.style.transform = `rotate(${-compassRotation}deg) translateY(-8px)`;
+
+            // Show heading with direction
+            const dir = getCardinalDirection(state.heading);
+            document.getElementById('heading-display').textContent = `${state.heading.toFixed(0)}° ${dir}`;
+
+            // Update sun position for AR
+            updateSunPosition();
+        }
+
+        // Handle device orientation absolute (Android)
+        function handleOrientationAbsolute(event) {
+            // Only use this if it's an absolute orientation event
+            if (event.absolute && event.alpha !== null) {
+                state.heading = (360 - event.alpha) % 360;
+                state.hasCompass = true;
+
+                const dir = getCardinalDirection(state.heading);
+                document.getElementById('heading-display').textContent = `${state.heading.toFixed(0)}° ${dir}`;
+
+                const compassRotation = state.heading;
+                compassNeedle.style.transform = `rotate(${-compassRotation}deg) translateY(-8px)`;
+
                 updateSunPosition();
             }
         }
 
         // Request orientation permission (iOS 13+)
         async function requestOrientationPermission() {
-            if (typeof DeviceOrientationEvent !== 'undefined' && 
+            if (typeof DeviceOrientationEvent !== 'undefined' &&
                 typeof DeviceOrientationEvent.requestPermission === 'function') {
                 try {
                     const permission = await DeviceOrientationEvent.requestPermission();
                     if (permission === 'granted') {
-                        window.addEventListener('deviceorientation', handleOrientation);
+                        window.addEventListener('deviceorientation', handleOrientation, true);
+                        // Also try absolute orientation for better accuracy
+                        if ('ondeviceorientationabsolute' in window) {
+                            window.addEventListener('deviceorientationabsolute', handleOrientationAbsolute, true);
+                        }
                     }
                 } catch (error) {
                     console.error('Orientation permission error:', error);
+                    document.getElementById('heading-display').textContent = 'センサー不可';
                 }
             } else {
-                window.addEventListener('deviceorientation', handleOrientation);
+                // Non-iOS or older browsers
+                window.addEventListener('deviceorientation', handleOrientation, true);
+                if ('ondeviceorientationabsolute' in window) {
+                    window.addEventListener('deviceorientationabsolute', handleOrientationAbsolute, true);
+                }
             }
         }
 
-        // Get geolocation
+        // Get geolocation with high accuracy
         function getLocation() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        state.latitude = position.coords.latitude;
-                        state.longitude = position.coords.longitude;
-                        updateSunPosition();
-                    },
-                    (error) => {
-                        console.error('Geolocation error:', error);
-                    }
-                );
+            if (!navigator.geolocation) {
+                console.warn('Geolocation not supported');
+                return;
             }
+
+            const options = {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 60000
+            };
+
+            // Get initial position
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    state.latitude = position.coords.latitude;
+                    state.longitude = position.coords.longitude;
+                    console.log(`Location: ${state.latitude.toFixed(4)}, ${state.longitude.toFixed(4)}`);
+                    updateSunPosition();
+                },
+                (error) => {
+                    console.warn('Geolocation error:', error.message);
+                    // Keep default Tokyo location
+                },
+                options
+            );
+
+            // Watch for location changes
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    state.latitude = position.coords.latitude;
+                    state.longitude = position.coords.longitude;
+                    updateSunPosition();
+                },
+                (error) => {
+                    // Ignore watch errors
+                },
+                { ...options, maximumAge: 30000 }
+            );
         }
 
         // Event Listeners
@@ -1579,120 +1685,100 @@
             e.stopPropagation();
         });
         
-        // Improved swipe gesture for panel with velocity-based interaction
-        let touchStartY = 0;
-        let touchCurrentY = 0;
-        let touchStartTime = 0;
-        let isDragging = false;
-        let initialPanelState = false;
-
-        const handleTouchStart = (e) => {
-            touchStartY = e.touches[0].clientY;
-            touchCurrentY = touchStartY;
-            touchStartTime = Date.now();
-            isDragging = true;
-            initialPanelState = controlPanel.classList.contains('open');
-            controlPanel.style.transition = 'none';
-        };
-
-        const handleTouchMove = (e) => {
-            if (!isDragging) return;
-
-            touchCurrentY = e.touches[0].clientY;
-            const deltaY = touchCurrentY - touchStartY;
-
-            // Visual feedback during drag with rubber band effect
-            if (initialPanelState) {
-                // Panel is open, allow dragging down
-                if (deltaY > 0) {
-                    const translateY = Math.min(deltaY, 350);
-                    controlPanel.style.transform = `translateY(${translateY}px)`;
-                } else {
-                    // Rubber band when pulling up on open panel
-                    const rubberBand = deltaY * 0.3;
-                    controlPanel.style.transform = `translateY(${rubberBand}px)`;
-                }
-            } else {
-                // Panel is closed, allow dragging up
-                if (deltaY < 0) {
-                    const translateY = Math.max(deltaY, -350);
-                    controlPanel.style.transform = `translateY(calc(100% - 90px + ${translateY}px))`;
-                } else {
-                    // Rubber band when pulling down on closed panel
-                    const rubberBand = deltaY * 0.3;
-                    controlPanel.style.transform = `translateY(calc(100% - 90px + ${rubberBand}px))`;
-                }
-            }
-        };
-
-        const handleTouchEnd = () => {
-            if (!isDragging) return;
-            isDragging = false;
-
-            const deltaY = touchCurrentY - touchStartY;
-            const deltaTime = Date.now() - touchStartTime;
-            const velocity = Math.abs(deltaY) / deltaTime;
-
-            // Lower threshold for fast swipes
-            const threshold = velocity > 0.5 ? 40 : 80;
-
-            // Reset transition with spring effect
-            controlPanel.style.transition = 'transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)';
-
-            if (initialPanelState) {
-                // Panel was open
-                if (deltaY > threshold) {
-                    // Swiped down enough - close it
-                    controlPanel.classList.remove('open');
-                    controlPanel.style.transform = '';
-                    document.querySelector('.panel-label').textContent = '設定を開く';
-                } else {
-                    // Not enough - keep open
-                    controlPanel.style.transform = 'translateY(0)';
-                }
-            } else {
-                // Panel was closed
-                if (deltaY < -threshold) {
-                    // Swiped up enough - open it
-                    controlPanel.classList.add('open');
-                    controlPanel.style.transform = '';
-                    document.querySelector('.panel-label').textContent = '設定を閉じる';
-                } else {
-                    // Not enough - keep closed
-                    controlPanel.style.transform = 'translateY(calc(100% - 90px))';
-                }
-            }
-        };
-        
-        // Attach to both panel and handle for better UX
+        // Simple and reliable swipe gesture for panel
         const panelHandle = document.getElementById('panel-toggle');
-        
-        panelHandle.addEventListener('touchstart', handleTouchStart, { passive: true });
-        panelHandle.addEventListener('touchmove', handleTouchMove, { passive: true });
-        panelHandle.addEventListener('touchend', handleTouchEnd);
-        
-        // Also allow dragging from top of panel content
-        const panelContent = controlPanel;
-        let lastScrollTop = 0;
-        
-        panelContent.addEventListener('touchstart', (e) => {
-            lastScrollTop = panelContent.scrollTop;
-            // Only enable drag if at top of scroll
-            if (lastScrollTop === 0) {
-                handleTouchStart(e);
+        let startY = 0;
+        let currentY = 0;
+        let startTime = 0;
+        let panelWasOpen = false;
+
+        function openPanel() {
+            controlPanel.classList.add('open');
+            controlPanel.style.transform = '';
+            document.querySelector('.panel-label').textContent = '設定を閉じる';
+        }
+
+        function closePanel() {
+            controlPanel.classList.remove('open');
+            controlPanel.style.transform = '';
+            document.querySelector('.panel-label').textContent = '設定を開く';
+        }
+
+        // Handle tap on panel handle
+        panelHandle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (controlPanel.classList.contains('open')) {
+                closePanel();
+            } else {
+                openPanel();
+            }
+        });
+
+        // Swipe on handle area
+        panelHandle.addEventListener('touchstart', (e) => {
+            startY = e.touches[0].clientY;
+            currentY = startY;
+            startTime = Date.now();
+            panelWasOpen = controlPanel.classList.contains('open');
+        }, { passive: true });
+
+        panelHandle.addEventListener('touchmove', (e) => {
+            currentY = e.touches[0].clientY;
+        }, { passive: true });
+
+        panelHandle.addEventListener('touchend', (e) => {
+            const deltaY = currentY - startY;
+            const deltaTime = Date.now() - startTime;
+            const velocity = deltaY / deltaTime; // positive = down, negative = up
+
+            // Detect swipe direction with velocity
+            if (Math.abs(deltaY) > 30 || Math.abs(velocity) > 0.3) {
+                if (velocity < -0.2 || deltaY < -50) {
+                    // Swipe up - open
+                    openPanel();
+                } else if (velocity > 0.2 || deltaY > 50) {
+                    // Swipe down - close
+                    closePanel();
+                }
+            }
+            // If not a clear swipe, tap handler will take care of it
+        });
+
+        // Swipe down on panel content to close (only when scrolled to top)
+        let panelScrollTop = 0;
+        let panelTouchStartY = 0;
+        let isPanelDragging = false;
+
+        controlPanel.addEventListener('touchstart', (e) => {
+            panelScrollTop = controlPanel.scrollTop;
+            panelTouchStartY = e.touches[0].clientY;
+            isPanelDragging = panelScrollTop <= 0;
+        }, { passive: true });
+
+        controlPanel.addEventListener('touchmove', (e) => {
+            if (!isPanelDragging || !controlPanel.classList.contains('open')) return;
+
+            const deltaY = e.touches[0].clientY - panelTouchStartY;
+
+            // Only allow dragging down when at top
+            if (panelScrollTop <= 0 && deltaY > 0) {
+                controlPanel.style.transition = 'none';
+                controlPanel.style.transform = `translateY(${Math.min(deltaY * 0.6, 200)}px)`;
             }
         }, { passive: true });
-        
-        panelContent.addEventListener('touchmove', (e) => {
-            if (lastScrollTop === 0 && isDragging) {
-                handleTouchMove(e);
+
+        controlPanel.addEventListener('touchend', (e) => {
+            if (!isPanelDragging) return;
+
+            const deltaY = e.changedTouches[0].clientY - panelTouchStartY;
+            controlPanel.style.transition = 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)';
+
+            if (deltaY > 100) {
+                closePanel();
+            } else {
+                controlPanel.style.transform = 'translateY(0)';
             }
-        }, { passive: true });
-        
-        panelContent.addEventListener('touchend', (e) => {
-            if (isDragging) {
-                handleTouchEnd();
-            }
+            isPanelDragging = false;
         });
 
         document.getElementById('save-btn').addEventListener('click', () => {
@@ -1733,19 +1819,37 @@
         document.getElementById('time-display').textContent = 
             `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
         
-        // For iOS, camera needs user interaction
-        let cameraStarted = false;
-        document.addEventListener('click', () => {
-            if (!cameraStarted) {
-                cameraStarted = true;
-                initCamera();
+        // iOS requires user interaction for camera and sensors
+        let appStarted = false;
+
+        async function startApp() {
+            if (appStarted) return;
+            appStarted = true;
+
+            // Request all permissions in sequence
+            try {
+                // 1. Camera
+                await initCamera();
+
+                // 2. Device orientation (compass)
+                await requestOrientationPermission();
+
+                // 3. Geolocation
+                getLocation();
+
+            } catch (error) {
+                console.error('Startup error:', error);
             }
-        }, { once: true });
-        
-        // Also try to start automatically
-        initCamera();
-        requestOrientationPermission();
-        getLocation();
+        }
+
+        // Start on first tap (required for iOS)
+        document.addEventListener('click', startApp, { once: true });
+        document.addEventListener('touchend', startApp, { once: true });
+
+        // Try to start automatically on non-iOS
+        if (!(/iPhone|iPad|iPod/.test(navigator.userAgent))) {
+            startApp();
+        }
         
         // Auto-open control panel on first load
         setTimeout(() => {
