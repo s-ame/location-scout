@@ -315,6 +315,7 @@
             height: 6px;
             background: var(--primary);
             border-radius: 3px;
+            box-shadow: 0 0 10px rgba(255, 107, 53, 0.3);
         }
         
         .panel-label {
@@ -323,6 +324,7 @@
             text-transform: uppercase;
             letter-spacing: 1px;
             font-weight: 700;
+            user-select: none;
         }
         
         .close-panel-btn {
@@ -1475,6 +1477,7 @@
             e.stopPropagation();
             const panel = controlPanel;
             const label = document.querySelector('.panel-label');
+            
             panel.classList.toggle('open');
             label.textContent = panel.classList.contains('open') ? '設定を閉じる' : '設定を開く';
         });
@@ -1486,37 +1489,120 @@
             document.querySelector('.panel-label').textContent = '設定を開く';
         });
         
+        // Tap camera area to close panel when open
+        document.getElementById('camera-container').addEventListener('click', (e) => {
+            if (controlPanel.classList.contains('open') && 
+                !controlPanel.contains(e.target) &&
+                !document.getElementById('quick-actions').contains(e.target)) {
+                controlPanel.classList.remove('open');
+                document.querySelector('.panel-label').textContent = '設定を開く';
+            }
+        });
+        
         // Prevent panel content clicks from closing
         controlPanel.addEventListener('click', (e) => {
             e.stopPropagation();
         });
         
-        // Add swipe down to close gesture
+        // Improved swipe gesture for panel
         let touchStartY = 0;
-        let touchEndY = 0;
+        let touchCurrentY = 0;
+        let isDragging = false;
+        let initialPanelState = false;
         
+        const handleTouchStart = (e) => {
+            touchStartY = e.touches[0].clientY;
+            touchCurrentY = touchStartY;
+            isDragging = true;
+            initialPanelState = controlPanel.classList.contains('open');
+        };
+        
+        const handleTouchMove = (e) => {
+            if (!isDragging) return;
+            
+            touchCurrentY = e.touches[0].clientY;
+            const deltaY = touchCurrentY - touchStartY;
+            
+            // Visual feedback during drag
+            if (initialPanelState) {
+                // Panel is open, allow dragging down
+                if (deltaY > 0) {
+                    const translateY = Math.min(deltaY, 300);
+                    controlPanel.style.transform = `translateY(${translateY}px)`;
+                    controlPanel.style.transition = 'none';
+                }
+            } else {
+                // Panel is closed, allow dragging up
+                if (deltaY < 0) {
+                    const translateY = Math.max(deltaY, -300);
+                    const closedPosition = window.innerHeight * 0.7 - 70; // Calculate closed position
+                    controlPanel.style.transform = `translateY(calc(100% - 70px + ${translateY}px))`;
+                    controlPanel.style.transition = 'none';
+                }
+            }
+        };
+        
+        const handleTouchEnd = () => {
+            if (!isDragging) return;
+            isDragging = false;
+            
+            const deltaY = touchCurrentY - touchStartY;
+            const threshold = 80; // Swipe threshold
+            
+            // Reset transition
+            controlPanel.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+            
+            if (initialPanelState) {
+                // Panel was open
+                if (deltaY > threshold) {
+                    // Swiped down enough - close it
+                    controlPanel.classList.remove('open');
+                    document.querySelector('.panel-label').textContent = '設定を開く';
+                } else {
+                    // Not enough - keep open
+                    controlPanel.style.transform = 'translateY(0)';
+                }
+            } else {
+                // Panel was closed
+                if (deltaY < -threshold) {
+                    // Swiped up enough - open it
+                    controlPanel.classList.add('open');
+                    document.querySelector('.panel-label').textContent = '設定を閉じる';
+                } else {
+                    // Not enough - keep closed
+                    controlPanel.style.transform = 'translateY(calc(100% - 70px))';
+                }
+            }
+        };
+        
+        // Attach to both panel and handle for better UX
         const panelHandle = document.getElementById('panel-toggle');
         
-        panelHandle.addEventListener('touchstart', (e) => {
-            touchStartY = e.touches[0].clientY;
-        }, { passive: true });
+        panelHandle.addEventListener('touchstart', handleTouchStart, { passive: true });
+        panelHandle.addEventListener('touchmove', handleTouchMove, { passive: true });
+        panelHandle.addEventListener('touchend', handleTouchEnd);
         
-        panelHandle.addEventListener('touchmove', (e) => {
-            touchEndY = e.touches[0].clientY;
-        }, { passive: true });
+        // Also allow dragging from top of panel content
+        const panelContent = controlPanel;
+        let lastScrollTop = 0;
         
-        panelHandle.addEventListener('touchend', () => {
-            const swipeDistance = touchEndY - touchStartY;
-            
-            // If swiped down more than 50px, close panel
-            if (swipeDistance > 50 && controlPanel.classList.contains('open')) {
-                controlPanel.classList.remove('open');
-                document.querySelector('.panel-label').textContent = '設定を開く';
+        panelContent.addEventListener('touchstart', (e) => {
+            lastScrollTop = panelContent.scrollTop;
+            // Only enable drag if at top of scroll
+            if (lastScrollTop === 0) {
+                handleTouchStart(e);
             }
-            // If swiped up more than 50px, open panel
-            else if (swipeDistance < -50 && !controlPanel.classList.contains('open')) {
-                controlPanel.classList.add('open');
-                document.querySelector('.panel-label').textContent = '設定を閉じる';
+        }, { passive: true });
+        
+        panelContent.addEventListener('touchmove', (e) => {
+            if (lastScrollTop === 0 && isDragging) {
+                handleTouchMove(e);
+            }
+        }, { passive: true });
+        
+        panelContent.addEventListener('touchend', (e) => {
+            if (isDragging) {
+                handleTouchEnd();
             }
         });
 
