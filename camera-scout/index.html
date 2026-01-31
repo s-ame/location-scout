@@ -276,9 +276,9 @@
             background: var(--bg-panel);
             border-top: 2px solid var(--border);
             padding: 20px 20px calc(env(safe-area-inset-bottom, 20px) + 20px);
-            max-height: 65vh;
+            max-height: 70vh;
             overflow-y: auto;
-            transform: translateY(100%);
+            transform: translateY(calc(100% - 60px));
             transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             z-index: 100;
         }
@@ -289,20 +289,20 @@
 
         .panel-handle {
             position: absolute;
-            top: -40px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 100px;
-            height: 40px;
-            background: var(--bg-panel);
-            border: 2px solid var(--border);
-            border-bottom: none;
+            top: -60px;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: linear-gradient(180deg, rgba(21, 21, 21, 0) 0%, var(--bg-panel) 40%);
+            border-top: 2px solid var(--border);
             border-radius: 12px 12px 0 0;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             transition: background 0.2s;
+            gap: 4px;
         }
 
         .panel-handle:active {
@@ -311,10 +311,18 @@
 
         .panel-handle::before {
             content: '';
-            width: 40px;
-            height: 4px;
-            background: var(--text-secondary);
-            border-radius: 2px;
+            width: 50px;
+            height: 5px;
+            background: var(--primary);
+            border-radius: 3px;
+        }
+        
+        .panel-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 700;
         }
 
         .control-section {
@@ -718,7 +726,9 @@
         </div>
 
         <div id="control-panel">
-            <div class="panel-handle" id="panel-toggle"></div>
+            <div class="panel-handle" id="panel-toggle">
+                <div class="panel-label">設定を開く</div>
+            </div>
             
             <div class="control-section">
                 <div class="section-title">センサーサイズ</div>
@@ -804,6 +814,9 @@
                 <div class="input-group">
                     <div class="time-display" id="time-display">12:00</div>
                     <input type="range" id="time-slider" min="0" max="1440" value="720" step="15">
+                    <div style="font-size: 10px; color: var(--text-secondary); margin-top: 8px; text-align: center;">
+                        方位角: <span id="debug-azimuth">---</span>° / 高度: <span id="debug-elevation">---</span>°
+                    </div>
                 </div>
                 <div class="toggle-row">
                     <label style="margin: 0;">太陽表示</label>
@@ -1082,33 +1095,75 @@
             document.getElementById('sensor-display').textContent = state.sensorSize.name;
         }
 
-        // Calculate sun position
-        function calculateSunPosition(latitude, longitude, time) {
-            const date = new Date();
-            date.setHours(0, time, 0, 0);
+        // Calculate sun position (more accurate algorithm)
+        function calculateSunPosition(latitude, longitude, timeInMinutes) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = now.getMonth();
+            const day = now.getDate();
+            const hours = Math.floor(timeInMinutes / 60);
+            const minutes = timeInMinutes % 60;
             
-            const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 86400000);
-            const declination = 23.45 * Math.sin((360 / 365) * (dayOfYear - 81) * Math.PI / 180);
+            // Create date object for the specified time
+            const date = new Date(year, month, day, hours, minutes, 0);
             
-            const hourAngle = (time / 60 - 12) * 15; // degrees
+            // Julian day calculation
+            const JD = (date.getTime() / 86400000) + 2440587.5;
+            const JC = (JD - 2451545.0) / 36525.0;
             
+            // Sun's geometric mean longitude (degrees)
+            const L0 = (280.46646 + JC * (36000.76983 + JC * 0.0003032)) % 360;
+            
+            // Sun's mean anomaly (degrees)
+            const M = (357.52911 + JC * (35999.05029 - 0.0001537 * JC)) % 360;
+            
+            // Equation of center
+            const C = Math.sin(M * Math.PI / 180) * (1.914602 - JC * (0.004817 + 0.000014 * JC)) +
+                     Math.sin(2 * M * Math.PI / 180) * (0.019993 - 0.000101 * JC) +
+                     Math.sin(3 * M * Math.PI / 180) * 0.000289;
+            
+            // Sun's true longitude
+            const sunLon = L0 + C;
+            
+            // Obliquity of the ecliptic
+            const epsilon = 23.439291 - JC * (0.0130042 + JC * (0.00000016 - JC * 0.000000504));
+            
+            // Sun's declination
+            const declination = Math.asin(Math.sin(epsilon * Math.PI / 180) * 
+                                         Math.sin(sunLon * Math.PI / 180)) * 180 / Math.PI;
+            
+            // Equation of time (minutes)
+            const eqTime = 4 * (L0 - 0.0057183 - M + C);
+            
+            // Hour angle (degrees)
+            const solarTime = (timeInMinutes + eqTime + 4 * longitude) % 1440;
+            const hourAngle = (solarTime / 4) - 180;
+            
+            // Convert to radians
             const latRad = latitude * Math.PI / 180;
             const decRad = declination * Math.PI / 180;
             const haRad = hourAngle * Math.PI / 180;
             
+            // Solar elevation angle
             const elevation = Math.asin(
                 Math.sin(latRad) * Math.sin(decRad) +
                 Math.cos(latRad) * Math.cos(decRad) * Math.cos(haRad)
             ) * 180 / Math.PI;
             
+            // Solar azimuth angle
             let azimuth = Math.atan2(
                 Math.sin(haRad),
                 Math.cos(haRad) * Math.sin(latRad) - Math.tan(decRad) * Math.cos(latRad)
             ) * 180 / Math.PI;
             
-            azimuth = (azimuth + 360) % 360;
+            // Normalize azimuth to 0-360
+            azimuth = (azimuth + 180) % 360;
             
-            return { azimuth, elevation };
+            return { 
+                azimuth: azimuth, 
+                elevation: elevation,
+                declination: declination
+            };
         }
 
         // Update sun indicator position
@@ -1126,6 +1181,10 @@
                 state.currentTime
             );
             
+            // Update debug display
+            document.getElementById('debug-azimuth').textContent = azimuth.toFixed(1);
+            document.getElementById('debug-elevation').textContent = elevation.toFixed(1);
+            
             // Calculate position relative to device heading
             const relativeBearing = (azimuth - state.heading + 360) % 360;
             
@@ -1139,12 +1198,20 @@
                 
                 sunIndicator.style.left = x - 30 + 'px';
                 sunIndicator.style.top = y - 30 + 'px';
-                sunIndicator.style.opacity = '0.8';
+                sunIndicator.style.opacity = Math.min(0.8, elevation / 90 + 0.3);
             } else {
-                sunIndicator.style.opacity = '0';
+                sunIndicator.style.opacity = '0.2';
+                // Show at edge of screen when out of view
+                if (angleFromCenter > 0) {
+                    sunIndicator.style.left = 'calc(100vw - 80px)';
+                } else {
+                    sunIndicator.style.left = '20px';
+                }
+                sunIndicator.style.top = '50%';
             }
             
-            document.getElementById('sun-position-display').textContent = azimuth.toFixed(0) + '°';
+            document.getElementById('sun-position-display').textContent = 
+                azimuth.toFixed(0) + '° (' + elevation.toFixed(0) + '°)';
         }
 
         // Handle device orientation
@@ -1195,11 +1262,17 @@
             const sensorData = sensorSizes[e.target.value];
             state.sensorSize = sensorData;
             updateFOV();
+            // Visual feedback
+            e.target.style.borderColor = 'var(--success)';
+            setTimeout(() => { e.target.style.borderColor = 'var(--border)'; }, 300);
         });
 
         document.getElementById('focal-length').addEventListener('input', (e) => {
             state.focalLength = parseFloat(e.target.value);
             updateFOV();
+            // Visual feedback
+            e.target.style.borderColor = 'var(--success)';
+            setTimeout(() => { e.target.style.borderColor = 'var(--border)'; }, 300);
         });
 
         document.querySelectorAll('.preset-btn').forEach(btn => {
@@ -1264,7 +1337,10 @@
         });
 
         document.getElementById('panel-toggle').addEventListener('click', () => {
-            controlPanel.classList.toggle('open');
+            const panel = controlPanel;
+            const label = document.querySelector('.panel-label');
+            panel.classList.toggle('open');
+            label.textContent = panel.classList.contains('open') ? '設定を閉じる' : '設定を開く';
         });
 
         document.getElementById('save-btn').addEventListener('click', () => {
@@ -1315,8 +1391,9 @@
         setTimeout(() => {
             if (loading.style.display === 'none') {
                 controlPanel.classList.add('open');
+                document.querySelector('.panel-label').textContent = '設定を閉じる';
             }
-        }, 1500);
+        }, 2000);
     </script>
 </body>
 </html>
