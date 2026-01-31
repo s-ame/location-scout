@@ -1217,6 +1217,9 @@
                 </div>
                 <div class="input-group">
                     <div class="time-display" id="time-display">12:00</div>
+                    <div style="font-size: 11px; color: var(--accent-cyan); margin-top: -12px; margin-bottom: 12px; text-align: center;">
+                        <span id="timezone-display">UTC+9</span> (現地時間)
+                    </div>
                     <input type="range" id="time-slider" min="0" max="1440" value="720" step="15">
                     <div style="font-size: 10px; color: var(--text-secondary); margin-top: 8px; text-align: center;">
                         方位角: <span id="debug-azimuth">---</span>° / 高度: <span id="debug-elevation">---</span>°
@@ -1256,7 +1259,8 @@
             hasCompass: false,
             latitude: 35.6762, // Default to Tokyo
             longitude: 139.6503,
-            timezoneOffset: new Date().getTimezoneOffset(), // minutes from UTC
+            timezoneOffset: -540, // minutes from UTC (negative = east, default JST = UTC+9 = -540)
+            locationTimezone: 'UTC+9', // Display name for current timezone
             // Compass smoothing (larger history for stability when phone is vertical)
             headingHistory: [],
             headingHistorySize: 10,
@@ -1449,6 +1453,15 @@
                     </div>
                 `;
             }
+        }
+
+        // Update time display with current timezone
+        function updateTimeDisplay() {
+            const hours = Math.floor(state.currentTime / 60);
+            const minutes = state.currentTime % 60;
+            document.getElementById('time-display').textContent =
+                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+            document.getElementById('timezone-display').textContent = state.locationTimezone;
         }
 
         // Resize canvas to match video
@@ -1926,6 +1939,23 @@
             }
         }
 
+        // Calculate timezone offset based on longitude
+        // Returns offset in minutes from UTC (negative = east of UTC)
+        function calculateTimezoneFromLongitude(longitude) {
+            // Standard timezone = round(longitude / 15) hours from UTC
+            const hoursFromUTC = Math.round(longitude / 15);
+            // Return in minutes, negative because JS Date uses opposite sign
+            return -hoursFromUTC * 60;
+        }
+
+        // Get timezone display name from offset
+        function getTimezoneDisplayName(offsetMinutes) {
+            const hours = -offsetMinutes / 60; // Convert back to positive hours east
+            if (hours === 0) return 'UTC';
+            const sign = hours > 0 ? '+' : '';
+            return `UTC${sign}${hours}`;
+        }
+
         // Calculate magnetic declination based on location (simplified)
         function calculateMagneticDeclination(lat, lon) {
             // Simplified calculation for Japan region
@@ -2098,7 +2128,11 @@
                     state.longitude = position.coords.longitude;
                     // Update magnetic declination based on location
                     state.magneticDeclination = calculateMagneticDeclination(state.latitude, state.longitude);
-                    console.log(`Location: ${state.latitude.toFixed(4)}, ${state.longitude.toFixed(4)}, Declination: ${state.magneticDeclination.toFixed(1)}°`);
+                    // Update timezone based on longitude
+                    state.timezoneOffset = calculateTimezoneFromLongitude(state.longitude);
+                    state.locationTimezone = getTimezoneDisplayName(state.timezoneOffset);
+                    console.log(`Location: ${state.latitude.toFixed(4)}, ${state.longitude.toFixed(4)}, Timezone: ${state.locationTimezone}`);
+                    updateTimeDisplay();
                     updateSunPosition();
                     updateSunTrajectory();
                 },
@@ -2115,6 +2149,13 @@
                     state.latitude = position.coords.latitude;
                     state.longitude = position.coords.longitude;
                     state.magneticDeclination = calculateMagneticDeclination(state.latitude, state.longitude);
+                    // Update timezone if longitude changed significantly
+                    const newTimezone = calculateTimezoneFromLongitude(state.longitude);
+                    if (newTimezone !== state.timezoneOffset) {
+                        state.timezoneOffset = newTimezone;
+                        state.locationTimezone = getTimezoneDisplayName(state.timezoneOffset);
+                        updateTimeDisplay();
+                    }
                     updateSunPosition();
                     updateSunTrajectory();
                 },
@@ -2248,10 +2289,7 @@
 
         document.getElementById('time-slider').addEventListener('input', (e) => {
             state.currentTime = parseFloat(e.target.value);
-            const hours = Math.floor(state.currentTime / 60);
-            const minutes = state.currentTime % 60;
-            document.getElementById('time-display').textContent =
-                `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+            updateTimeDisplay();
             updateSunPosition();
             updateSunTrajectory();
         });
@@ -2262,10 +2300,7 @@
                 const time = parseFloat(e.target.dataset.time);
                 state.currentTime = time;
                 document.getElementById('time-slider').value = time;
-                const hours = Math.floor(time / 60);
-                const minutes = time % 60;
-                document.getElementById('time-display').textContent =
-                    `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                updateTimeDisplay();
                 updateSunPosition();
                 updateSunTrajectory();
             });
@@ -2363,12 +2398,8 @@
         window.addEventListener('resize', resizeCanvas);
         
         // Set initial time to current time
-        const initTime = state.currentTime;
-        document.getElementById('time-slider').value = initTime;
-        const hours = Math.floor(initTime / 60);
-        const minutes = initTime % 60;
-        document.getElementById('time-display').textContent = 
-            `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        document.getElementById('time-slider').value = state.currentTime;
+        updateTimeDisplay();
         
         // Permission state
         const permissions = {
