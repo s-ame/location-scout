@@ -232,6 +232,17 @@
             box-shadow: 0 0 20px var(--accent-yellow);
         }
 
+        /* Sun trajectory path */
+        #sun-trajectory {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
         /* HUD Info Panels - optimized for landscape */
         #hud-top {
             position: absolute;
@@ -253,6 +264,82 @@
                 padding-top: calc(env(safe-area-inset-top, 4px) + 4px);
                 padding-bottom: 12px;
             }
+        }
+
+        /* Fullscreen button for landscape mode */
+        #fullscreen-btn {
+            position: absolute;
+            top: calc(env(safe-area-inset-top, 0px) + 8px);
+            right: calc(env(safe-area-inset-right, 0px) + 70px);
+            width: 40px;
+            height: 40px;
+            background: rgba(21, 21, 21, 0.85);
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 50;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            transition: all 0.2s;
+        }
+
+        #fullscreen-btn:active {
+            transform: scale(0.9);
+        }
+
+        #fullscreen-btn svg {
+            width: 20px;
+            height: 20px;
+            stroke: var(--text-primary);
+            fill: none;
+            stroke-width: 2;
+        }
+
+        @media (orientation: portrait) {
+            #fullscreen-btn {
+                display: none;
+            }
+        }
+
+        /* Frame overflow indicator */
+        .frame-overflow-indicator {
+            position: absolute;
+            background: rgba(255, 107, 53, 0.9);
+            color: var(--bg-dark);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            z-index: 20;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        .frame-overflow-indicator.top {
+            top: calc(env(safe-area-inset-top, 0px) + 80px);
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .frame-overflow-indicator.bottom {
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .frame-overflow-indicator.left {
+            left: calc(env(safe-area-inset-left, 0px) + 80px);
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .frame-overflow-indicator.right {
+            right: calc(env(safe-area-inset-right, 0px) + 80px);
+            top: 50%;
+            transform: translateY(-50%);
         }
 
         .info-row {
@@ -982,8 +1069,26 @@
         <video id="camera-feed" autoplay playsinline></video>
         
         <canvas id="fov-overlay"></canvas>
-        
+
+        <canvas id="sun-trajectory"></canvas>
+
         <div id="sun-indicator"></div>
+
+        <!-- Fullscreen button for hiding Safari toolbar -->
+        <div id="fullscreen-btn" title="フルスクリーン">
+            <svg viewBox="0 0 24 24">
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <polyline points="9 21 3 21 3 15"></polyline>
+                <line x1="21" y1="3" x2="14" y2="10"></line>
+                <line x1="3" y1="21" x2="10" y2="14"></line>
+            </svg>
+        </div>
+
+        <!-- Frame overflow indicators -->
+        <div id="frame-overflow-top" class="frame-overflow-indicator top" style="display: none;"></div>
+        <div id="frame-overflow-bottom" class="frame-overflow-indicator bottom" style="display: none;"></div>
+        <div id="frame-overflow-left" class="frame-overflow-indicator left" style="display: none;"></div>
+        <div id="frame-overflow-right" class="frame-overflow-indicator right" style="display: none;"></div>
         
         <div id="compass">
             <div class="compass-needle"></div>
@@ -1153,6 +1258,10 @@
                     <label style="margin: 0;">太陽表示</label>
                     <div class="toggle-switch active" id="sun-toggle"></div>
                 </div>
+                <div class="toggle-row">
+                    <label style="margin: 0;">軌道表示</label>
+                    <div class="toggle-switch active" id="trajectory-toggle"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -1166,6 +1275,7 @@
             aspectRatio: { w: 3, h: 2 },
             showGrid: false,
             showSun: true,
+            showTrajectory: true,
             currentTime: (() => {
                 const now = new Date();
                 return now.getHours() * 60 + now.getMinutes();
@@ -1179,6 +1289,11 @@
             latitude: 35.6762, // Default to Tokyo
             longitude: 139.6503,
             timezoneOffset: new Date().getTimezoneOffset(), // minutes from UTC
+            // Compass smoothing
+            headingHistory: [],
+            headingHistorySize: 5,
+            // Magnetic declination (will be calculated based on location)
+            magneticDeclination: 7.5, // Default for Tokyo area (degrees East)
         };
 
         // Sensor size configurations (width x height in mm)
@@ -1196,6 +1311,8 @@
         const cameraFeed = document.getElementById('camera-feed');
         const fovOverlay = document.getElementById('fov-overlay');
         const ctx = fovOverlay.getContext('2d');
+        const sunTrajectory = document.getElementById('sun-trajectory');
+        const trajectoryCtx = sunTrajectory.getContext('2d');
         const controlPanel = document.getElementById('control-panel');
         const loading = document.getElementById('loading');
         const sunIndicator = document.getElementById('sun-indicator');
@@ -1323,7 +1440,10 @@
         function resizeCanvas() {
             fovOverlay.width = window.innerWidth;
             fovOverlay.height = window.innerHeight;
+            sunTrajectory.width = window.innerWidth;
+            sunTrajectory.height = window.innerHeight;
             updateFOV();
+            updateSunTrajectory();
         }
 
         // Calculate field of view
@@ -1334,15 +1454,15 @@
         // Update FOV overlay
         function updateFOV() {
             ctx.clearRect(0, 0, fovOverlay.width, fovOverlay.height);
-            
+
             const { width: sensorWidth, height: sensorHeight } = state.sensorSize;
             const focalLength = state.focalLength;
-            
+
             // Calculate FOV based on aspect ratio
             let effectiveSensorWidth, effectiveSensorHeight;
             const sensorAspect = sensorWidth / sensorHeight;
             const targetAspect = state.aspectRatio.w / state.aspectRatio.h;
-            
+
             if (targetAspect > sensorAspect) {
                 effectiveSensorWidth = sensorWidth;
                 effectiveSensorHeight = sensorWidth / targetAspect;
@@ -1350,20 +1470,60 @@
                 effectiveSensorHeight = sensorHeight;
                 effectiveSensorWidth = sensorHeight * targetAspect;
             }
-            
+
             const hFOV = calculateFOV(focalLength, effectiveSensorWidth);
             const vFOV = calculateFOV(focalLength, effectiveSensorHeight);
-            
+
             // iPhone camera FOV (approximate)
             const iPhoneFOV = 63; // degrees (wide camera)
-            
+
             // Calculate frame dimensions
             const scale = Math.tan((hFOV * Math.PI / 180) / 2) / Math.tan((iPhoneFOV * Math.PI / 180) / 2);
-            const frameWidth = fovOverlay.width * scale;
-            const frameHeight = frameWidth / targetAspect;
-            
-            const x = (fovOverlay.width - frameWidth) / 2;
-            const y = (fovOverlay.height - frameHeight) / 2;
+            let frameWidth = fovOverlay.width * scale;
+            let frameHeight = frameWidth / targetAspect;
+
+            let x = (fovOverlay.width - frameWidth) / 2;
+            let y = (fovOverlay.height - frameHeight) / 2;
+
+            // Track overflow for wide-angle lenses
+            const overflowTop = y < 0;
+            const overflowBottom = y + frameHeight > fovOverlay.height;
+            const overflowLeft = x < 0;
+            const overflowRight = x + frameWidth > fovOverlay.width;
+
+            // Show/hide overflow indicators
+            const topIndicator = document.getElementById('frame-overflow-top');
+            const bottomIndicator = document.getElementById('frame-overflow-bottom');
+            const leftIndicator = document.getElementById('frame-overflow-left');
+            const rightIndicator = document.getElementById('frame-overflow-right');
+
+            if (overflowTop) {
+                topIndicator.style.display = 'block';
+                topIndicator.textContent = `↑ ${Math.abs(Math.round(y))}px はみ出し`;
+            } else {
+                topIndicator.style.display = 'none';
+            }
+
+            if (overflowBottom) {
+                bottomIndicator.style.display = 'block';
+                bottomIndicator.textContent = `↓ ${Math.round(y + frameHeight - fovOverlay.height)}px はみ出し`;
+            } else {
+                bottomIndicator.style.display = 'none';
+            }
+
+            if (overflowLeft) {
+                leftIndicator.style.display = 'block';
+                leftIndicator.textContent = `← ${Math.abs(Math.round(x))}px`;
+            } else {
+                leftIndicator.style.display = 'none';
+            }
+
+            if (overflowRight) {
+                rightIndicator.style.display = 'block';
+                rightIndicator.textContent = `→ ${Math.round(x + frameWidth - fovOverlay.width)}px`;
+            } else {
+                rightIndicator.style.display = 'none';
+            }
             
             // Draw frame
             ctx.strokeStyle = 'rgba(255, 107, 53, 0.6)';
@@ -1627,6 +1787,142 @@
             return directions[index];
         }
 
+        // Draw sun trajectory arc
+        function updateSunTrajectory() {
+            trajectoryCtx.clearRect(0, 0, sunTrajectory.width, sunTrajectory.height);
+
+            if (!state.showTrajectory || !state.hasCompass) return;
+
+            // iPhone camera FOV
+            const hFOV = 75;
+            const vFOV = 60;
+
+            // Calculate sun positions throughout the day
+            const points = [];
+            const currentHour = Math.floor(state.currentTime / 60);
+
+            for (let minutes = 300; minutes <= 1260; minutes += 15) { // 5:00 to 21:00
+                const { azimuth, elevation } = calculateSunPosition(
+                    state.latitude,
+                    state.longitude,
+                    minutes
+                );
+
+                if (elevation < -10) continue; // Skip when sun is well below horizon
+
+                // Calculate relative position
+                let relativeBearing = azimuth - state.heading;
+                while (relativeBearing > 180) relativeBearing -= 360;
+                while (relativeBearing < -180) relativeBearing += 360;
+
+                const cameraLookAngle = 90 - state.beta;
+                const relativeElevation = elevation - cameraLookAngle;
+
+                // Check if within extended view (show arc even if partially off-screen)
+                const extendedHFOV = hFOV * 1.5;
+                const extendedVFOV = vFOV * 1.5;
+
+                if (Math.abs(relativeBearing) <= extendedHFOV / 2 &&
+                    Math.abs(relativeElevation) <= extendedVFOV / 2) {
+
+                    const xRatio = relativeBearing / (hFOV / 2);
+                    const yRatio = -relativeElevation / (vFOV / 2);
+
+                    const x = sunTrajectory.width / 2 + (xRatio * sunTrajectory.width / 2);
+                    const y = sunTrajectory.height / 2 + (yRatio * sunTrajectory.height / 2);
+
+                    const hour = Math.floor(minutes / 60);
+                    const isCurrentTime = Math.abs(minutes - state.currentTime) < 15;
+
+                    points.push({
+                        x, y, minutes, hour, elevation,
+                        inView: Math.abs(relativeBearing) <= hFOV / 2 && Math.abs(relativeElevation) <= vFOV / 2,
+                        isCurrentTime
+                    });
+                }
+            }
+
+            if (points.length < 2) return;
+
+            // Draw trajectory path
+            trajectoryCtx.beginPath();
+            trajectoryCtx.strokeStyle = 'rgba(255, 215, 0, 0.4)';
+            trajectoryCtx.lineWidth = 3;
+            trajectoryCtx.setLineDash([8, 8]);
+
+            let firstPoint = true;
+            for (const point of points) {
+                if (point.elevation < -5) continue;
+                if (firstPoint) {
+                    trajectoryCtx.moveTo(point.x, point.y);
+                    firstPoint = false;
+                } else {
+                    trajectoryCtx.lineTo(point.x, point.y);
+                }
+            }
+            trajectoryCtx.stroke();
+            trajectoryCtx.setLineDash([]);
+
+            // Draw hour markers
+            trajectoryCtx.font = '11px JetBrains Mono';
+            trajectoryCtx.textAlign = 'center';
+            trajectoryCtx.textBaseline = 'middle';
+
+            for (const point of points) {
+                if (!point.inView || point.elevation < 0) continue;
+
+                // Draw hour markers every hour
+                if (point.minutes % 60 === 0) {
+                    const hour = point.hour;
+
+                    // Draw small circle
+                    trajectoryCtx.beginPath();
+                    trajectoryCtx.arc(point.x, point.y, point.isCurrentTime ? 8 : 5, 0, Math.PI * 2);
+                    trajectoryCtx.fillStyle = point.isCurrentTime ? 'rgba(255, 215, 0, 0.9)' : 'rgba(255, 215, 0, 0.6)';
+                    trajectoryCtx.fill();
+
+                    // Draw hour label
+                    trajectoryCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                    trajectoryCtx.fillText(`${hour}:00`, point.x, point.y - 15);
+                }
+            }
+        }
+
+        // Calculate magnetic declination based on location (simplified)
+        function calculateMagneticDeclination(lat, lon) {
+            // Simplified calculation for Japan region
+            // In reality, you would use a proper geomagnetic model like IGRF
+            // For Japan, declination is roughly 7-8 degrees West
+            // This is a rough approximation
+            if (lat > 30 && lat < 46 && lon > 128 && lon < 146) {
+                // Japan region
+                return 7.5 - (lon - 135) * 0.1; // Rough approximation
+            }
+            // Default for other regions (very rough)
+            return 0;
+        }
+
+        // Smooth heading values to reduce jitter
+        function smoothHeading(newHeading) {
+            state.headingHistory.push(newHeading);
+            if (state.headingHistory.length > state.headingHistorySize) {
+                state.headingHistory.shift();
+            }
+
+            // Handle circular averaging for compass headings
+            let sinSum = 0;
+            let cosSum = 0;
+            for (const h of state.headingHistory) {
+                sinSum += Math.sin(h * Math.PI / 180);
+                cosSum += Math.cos(h * Math.PI / 180);
+            }
+
+            let avgHeading = Math.atan2(sinSum, cosSum) * 180 / Math.PI;
+            if (avgHeading < 0) avgHeading += 360;
+
+            return avgHeading;
+        }
+
         // Handle device orientation - iOS uses webkitCompassHeading for true north
         function handleOrientation(event) {
             // Store raw orientation values
@@ -1634,24 +1930,30 @@
             state.beta = event.beta || 0;
             state.gamma = event.gamma || 0;
 
+            let rawHeading = 0;
+
             // Get compass heading
-            // iOS provides webkitCompassHeading (degrees from magnetic north, 0-360)
-            // Android/other uses alpha (needs calibration)
+            // iOS provides webkitCompassHeading (degrees from TRUE north, 0-360)
+            // Note: iOS webkitCompassHeading already accounts for magnetic declination
             if (event.webkitCompassHeading !== undefined && event.webkitCompassHeading !== null) {
-                // iOS: webkitCompassHeading is degrees from magnetic north
-                state.heading = event.webkitCompassHeading;
+                // iOS: webkitCompassHeading is degrees from TRUE north (not magnetic)
+                rawHeading = event.webkitCompassHeading;
                 state.hasCompass = true;
             } else if (event.alpha !== null) {
                 // Android/fallback: alpha is rotation around z-axis
-                // When absolute is true, alpha is relative to north
+                // This gives MAGNETIC north, so we need to apply declination
                 if (event.absolute) {
-                    state.heading = (360 - event.alpha) % 360;
+                    rawHeading = (360 - event.alpha) % 360;
                 } else {
-                    // Relative orientation - less accurate
-                    state.heading = (360 - event.alpha) % 360;
+                    rawHeading = (360 - event.alpha) % 360;
                 }
+                // Apply magnetic declination for true north
+                rawHeading = (rawHeading + state.magneticDeclination + 360) % 360;
                 state.hasCompass = true;
             }
+
+            // Apply smoothing to reduce jitter
+            state.heading = smoothHeading(rawHeading);
 
             // Update compass display
             const compassRotation = state.heading;
@@ -1661,8 +1963,9 @@
             const dir = getCardinalDirection(state.heading);
             document.getElementById('heading-display').textContent = `${state.heading.toFixed(0)}° ${dir}`;
 
-            // Update sun position for AR
+            // Update sun position and trajectory for AR
             updateSunPosition();
+            updateSunTrajectory();
         }
 
         // Handle device orientation absolute (Android)
@@ -1726,8 +2029,11 @@
                 (position) => {
                     state.latitude = position.coords.latitude;
                     state.longitude = position.coords.longitude;
-                    console.log(`Location: ${state.latitude.toFixed(4)}, ${state.longitude.toFixed(4)}`);
+                    // Update magnetic declination based on location
+                    state.magneticDeclination = calculateMagneticDeclination(state.latitude, state.longitude);
+                    console.log(`Location: ${state.latitude.toFixed(4)}, ${state.longitude.toFixed(4)}, Declination: ${state.magneticDeclination.toFixed(1)}°`);
                     updateSunPosition();
+                    updateSunTrajectory();
                 },
                 (error) => {
                     console.warn('Geolocation error:', error.message);
@@ -1741,7 +2047,9 @@
                 (position) => {
                     state.latitude = position.coords.latitude;
                     state.longitude = position.coords.longitude;
+                    state.magneticDeclination = calculateMagneticDeclination(state.latitude, state.longitude);
                     updateSunPosition();
+                    updateSunTrajectory();
                 },
                 (error) => {
                     // Ignore watch errors
@@ -1820,13 +2128,48 @@
             updateSunPosition();
         });
 
+        document.getElementById('trajectory-toggle').addEventListener('click', (e) => {
+            state.showTrajectory = !state.showTrajectory;
+            e.currentTarget.classList.toggle('active');
+            updateSunTrajectory();
+        });
+
+        // Fullscreen button - helps hide Safari toolbar in landscape
+        document.getElementById('fullscreen-btn').addEventListener('click', async () => {
+            const elem = document.documentElement;
+
+            try {
+                if (document.fullscreenElement || document.webkitFullscreenElement) {
+                    // Exit fullscreen
+                    if (document.exitFullscreen) {
+                        await document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    }
+                } else {
+                    // Enter fullscreen
+                    if (elem.requestFullscreen) {
+                        await elem.requestFullscreen();
+                    } else if (elem.webkitRequestFullscreen) {
+                        // iOS Safari doesn't support fullscreen API, but this is for other browsers
+                        elem.webkitRequestFullscreen();
+                    }
+                }
+            } catch (err) {
+                // Fullscreen not supported (especially on iOS Safari)
+                // Show a helpful message
+                alert('フルスクリーンはこのブラウザでサポートされていません。\\n\\nSafariのツールバーを最小化するには：\\n• 下にスクロールするとツールバーが隠れます\\n• または「ホーム画面に追加」してWebアプリとして使用してください');
+            }
+        });
+
         document.getElementById('time-slider').addEventListener('input', (e) => {
             state.currentTime = parseFloat(e.target.value);
             const hours = Math.floor(state.currentTime / 60);
             const minutes = state.currentTime % 60;
-            document.getElementById('time-display').textContent = 
+            document.getElementById('time-display').textContent =
                 `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
             updateSunPosition();
+            updateSunTrajectory();
         });
         
         // Time preset buttons
@@ -1837,9 +2180,10 @@
                 document.getElementById('time-slider').value = time;
                 const hours = Math.floor(time / 60);
                 const minutes = time % 60;
-                document.getElementById('time-display').textContent = 
+                document.getElementById('time-display').textContent =
                     `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
                 updateSunPosition();
+                updateSunTrajectory();
             });
         });
 
@@ -2026,6 +2370,7 @@
                 resizeCanvas();
                 updateFOV();
                 updateSunPosition();
+                updateSunTrajectory();
             }
         });
 
