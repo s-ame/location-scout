@@ -7,6 +7,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#0a0a0a">
+    <meta name="screen-orientation" content="landscape">
     <title>ProScout - ロケハンアプリ</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
     <style>
@@ -231,16 +232,27 @@
             box-shadow: 0 0 20px var(--accent-yellow);
         }
 
-        /* HUD Info Panels */
+        /* HUD Info Panels - optimized for landscape */
         #hud-top {
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
-            padding: calc(env(safe-area-inset-top, 20px) + 10px) calc(env(safe-area-inset-right, 0px) + 16px) 24px calc(env(safe-area-inset-left, 0px) + 16px);
-            background: linear-gradient(180deg, rgba(10, 10, 10, 0.98) 0%, rgba(10, 10, 10, 0.7) 60%, rgba(10, 10, 10, 0) 100%);
+            padding: calc(env(safe-area-inset-top, 8px) + 8px) calc(env(safe-area-inset-right, 0px) + 16px) 16px calc(env(safe-area-inset-left, 0px) + 16px);
+            background: linear-gradient(180deg, rgba(10, 10, 10, 0.95) 0%, rgba(10, 10, 10, 0.6) 70%, rgba(10, 10, 10, 0) 100%);
             z-index: 10;
-            min-height: 120px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        @media (orientation: landscape) {
+            #hud-top {
+                padding-top: calc(env(safe-area-inset-top, 4px) + 4px);
+                padding-bottom: 12px;
+            }
         }
 
         .info-row {
@@ -282,27 +294,28 @@
             margin-left: 4px;
         }
 
-        /* Control Panel */
+        /* Control Panel - slide from right in landscape */
         #control-panel {
             position: absolute;
-            bottom: 0;
-            left: 0;
+            top: 0;
             right: 0;
+            bottom: 0;
+            width: 340px;
+            max-width: 90vw;
             background: var(--bg-panel);
-            border-top: 2px solid var(--border);
-            padding: 24px calc(env(safe-area-inset-right, 0px) + 20px) calc(env(safe-area-inset-bottom, 20px) + 24px) calc(env(safe-area-inset-left, 0px) + 20px);
-            max-height: 75vh;
+            border-left: 2px solid var(--border);
+            padding: calc(env(safe-area-inset-top, 16px) + 16px) 20px calc(env(safe-area-inset-bottom, 16px) + 16px) 20px;
+            padding-right: calc(env(safe-area-inset-right, 0px) + 20px);
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
             overscroll-behavior: contain;
-            transform: translateY(calc(100% - 90px));
-            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: translateX(100%);
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
             z-index: 100;
-            border-radius: 24px 24px 0 0;
         }
 
         #control-panel.open {
-            transform: translateY(0);
+            transform: translateX(0);
         }
 
         /* Scrollbar hide for cleaner look on iOS */
@@ -314,79 +327,84 @@
             scrollbar-width: none;
         }
 
-        .panel-handle {
+        /* Settings toggle button */
+        #settings-toggle {
             position: absolute;
-            top: -90px;
-            left: 0;
-            right: 0;
-            height: 90px;
-            background: linear-gradient(180deg, rgba(21, 21, 21, 0) 0%, var(--bg-panel) 50%);
-            border-top: 2px solid var(--border);
-            border-radius: 24px 24px 0 0;
+            right: calc(env(safe-area-inset-right, 0px) + 16px);
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+            width: 50px;
+            height: 50px;
+            background: rgba(21, 21, 21, 0.85);
+            border: 2px solid var(--border);
+            border-radius: 14px;
             display: flex;
-            flex-direction: column;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: background 0.2s;
-            gap: 8px;
-            padding-top: 16px;
+            z-index: 50;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            transition: all 0.2s;
         }
 
-        .panel-handle:active {
-            background: rgba(42, 42, 42, 0.8);
+        #settings-toggle:active {
+            transform: scale(0.9);
         }
 
-        .panel-handle::before {
-            content: '';
-            width: 48px;
-            height: 5px;
-            background: var(--text-secondary);
-            border-radius: 3px;
-            transition: background 0.2s, width 0.2s;
+        #settings-toggle svg {
+            width: 24px;
+            height: 24px;
+            stroke: var(--text-primary);
+            fill: none;
+            stroke-width: 2;
         }
 
-        .panel-handle:active::before {
-            background: var(--primary);
-            width: 60px;
+        #control-panel.open ~ #settings-toggle {
+            display: none;
+        }
+
+        /* Panel handle - now hidden since we use settings button */
+        .panel-handle {
+            display: none;
         }
 
         .panel-label {
-            font-size: 12px;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            display: none;
+        }
+
+        /* Panel header */
+        .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-title {
+            font-size: 18px;
             font-weight: 700;
-            user-select: none;
-            padding: 8px 16px;
+            color: var(--text-primary);
         }
         
         .close-panel-btn {
-            position: sticky;
-            top: 0;
-            right: 0;
-            margin-left: auto;
-            margin-bottom: 24px;
-            padding: 16px 24px;
+            width: 44px;
+            height: 44px;
             background: var(--bg-dark);
             border: 2px solid var(--border);
             color: var(--text-primary);
             border-radius: 12px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 15px;
-            font-weight: 600;
             cursor: pointer;
             display: flex;
             align-items: center;
-            gap: 10px;
+            justify-content: center;
             transition: all 0.15s ease-out;
-            z-index: 10;
-            width: fit-content;
-            min-height: 52px;
+            flex-shrink: 0;
         }
 
         .close-panel-btn:active {
-            transform: scale(0.94);
+            transform: scale(0.9);
             background: var(--primary);
             border-color: var(--primary);
             color: var(--bg-dark);
@@ -616,26 +634,25 @@
             transform: translateX(24px);
         }
 
-        /* Quick action buttons */
+        /* Quick action buttons - positioned at bottom left for landscape */
         #quick-actions {
             position: absolute;
-            right: calc(env(safe-area-inset-right, 0px) + 12px);
-            top: 50%;
-            transform: translateY(-50%);
+            left: calc(env(safe-area-inset-left, 0px) + 16px);
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
             display: flex;
-            flex-direction: column;
-            gap: 20px;
+            flex-direction: row;
+            gap: 12px;
             z-index: 10;
         }
 
         .action-btn {
-            width: 56px;
-            height: 56px;
-            min-width: 56px;
-            min-height: 56px;
-            background: rgba(21, 21, 21, 0.9);
+            width: 50px;
+            height: 50px;
+            min-width: 50px;
+            min-height: 50px;
+            background: rgba(21, 21, 21, 0.85);
             border: 2px solid var(--border);
-            border-radius: 16px;
+            border-radius: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -657,8 +674,8 @@
         }
 
         .action-btn svg {
-            width: 24px;
-            height: 24px;
+            width: 22px;
+            height: 22px;
             stroke: var(--text-primary);
             fill: none;
             stroke-width: 2;
@@ -682,16 +699,17 @@
             text-shadow: 0 2px 12px rgba(255, 215, 0, 0.3);
         }
 
-        /* Compass overlay */
+        /* Compass overlay - positioned for landscape */
         #compass {
             position: absolute;
-            top: calc(env(safe-area-inset-top, 20px) + 100px);
+            top: 50%;
             left: calc(env(safe-area-inset-left, 0px) + 16px);
-            width: 64px;
-            height: 64px;
+            transform: translateY(-50%);
+            width: 56px;
+            height: 56px;
             background: rgba(21, 21, 21, 0.85);
             border: 2px solid var(--border);
-            border-radius: 16px;
+            border-radius: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -703,14 +721,14 @@
         .compass-needle {
             position: absolute;
             width: 2px;
-            height: 22px;
+            height: 18px;
             background: linear-gradient(180deg, var(--primary) 0%, var(--text-secondary) 100%);
             transform-origin: bottom center;
             transition: transform 0.2s ease-out;
         }
 
         .compass-text {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 700;
             color: var(--primary);
         }
@@ -718,16 +736,22 @@
         /* Loading state */
         #loading {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             text-align: center;
             z-index: 1000;
             padding: 32px;
-            background: rgba(10, 10, 10, 0.9);
-            border-radius: 20px;
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+            background: var(--bg-dark);
+        }
+
+        .loading-content {
+            max-width: 400px;
         }
 
         .spinner {
@@ -742,6 +766,110 @@
 
         @keyframes spin {
             to { transform: rotate(360deg); }
+        }
+
+        .permission-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            padding: 18px 24px;
+            margin: 12px 0;
+            background: var(--bg-panel);
+            border: 2px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .permission-btn:active {
+            transform: scale(0.97);
+            background: var(--border);
+        }
+
+        .permission-btn.granted {
+            background: rgba(0, 255, 136, 0.15);
+            border-color: var(--success);
+            color: var(--success);
+        }
+
+        .permission-btn.denied {
+            background: rgba(255, 107, 53, 0.15);
+            border-color: var(--primary);
+            color: var(--primary);
+        }
+
+        .permission-btn svg {
+            width: 24px;
+            height: 24px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+        }
+
+        .start-btn {
+            width: 100%;
+            padding: 20px 32px;
+            margin-top: 24px;
+            background: var(--primary);
+            border: none;
+            color: var(--bg-dark);
+            border-radius: 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 17px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .start-btn:active {
+            transform: scale(0.97);
+            background: var(--primary-dark);
+        }
+
+        .start-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Landscape orientation hint */
+        #rotate-hint {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg-dark);
+            z-index: 2000;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 32px;
+        }
+
+        @media (orientation: portrait) {
+            #rotate-hint {
+                display: flex;
+            }
+        }
+
+        .rotate-icon {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 24px;
+            animation: rotateHint 2s ease-in-out infinite;
+        }
+
+        @keyframes rotateHint {
+            0%, 100% { transform: rotate(0deg); }
+            50% { transform: rotate(90deg); }
         }
 
         /* Sensor info badge */
@@ -801,11 +929,52 @@
     </style>
 </head>
 <body>
+    <!-- Rotate to landscape hint -->
+    <div id="rotate-hint">
+        <svg class="rotate-icon" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2">
+            <rect x="4" y="2" width="16" height="20" rx="2" ry="2"/>
+            <line x1="12" y1="18" x2="12" y2="18"/>
+        </svg>
+        <div style="color: var(--text-primary); font-size: 18px; font-weight: 700; margin-bottom: 12px;">
+            横向きにしてください
+        </div>
+        <div style="color: var(--text-secondary); font-size: 13px;">
+            このアプリは横向き（ランドスケープ）で<br>使用することを推奨します
+        </div>
+    </div>
+
     <div id="loading">
-        <div class="spinner"></div>
-        <div style="color: var(--text-primary); font-size: 14px; margin-bottom: 12px; font-weight: 600;">タップして開始</div>
-        <div style="color: var(--text-secondary); font-size: 11px; line-height: 1.6;">
-            カメラ・位置情報・コンパスへの<br>アクセスを許可してください
+        <div class="loading-content">
+            <div style="color: var(--primary); font-size: 24px; font-weight: 700; margin-bottom: 8px;">ProScout</div>
+            <div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 32px;">ロケハン撮影支援アプリ</div>
+
+            <div style="color: var(--text-primary); font-size: 14px; margin-bottom: 20px; font-weight: 600;">
+                以下の許可が必要です
+            </div>
+
+            <button class="permission-btn" id="perm-camera">
+                <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                カメラ
+            </button>
+
+            <button class="permission-btn" id="perm-orientation">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+                コンパス・傾きセンサー
+            </button>
+
+            <button class="permission-btn" id="perm-location">
+                <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                位置情報
+            </button>
+
+            <button class="start-btn" id="start-app-btn" disabled>
+                すべて許可して開始
+            </button>
+
+            <div style="color: var(--text-secondary); font-size: 10px; margin-top: 20px; line-height: 1.6;">
+                ※ 太陽位置のAR表示にはコンパスが必要です<br>
+                ※ 横向き（ランドスケープ）での使用を推奨
+            </div>
         </div>
     </div>
 
@@ -860,18 +1029,24 @@
             </div>
         </div>
 
+        <!-- Settings toggle button -->
+        <div id="settings-toggle">
+            <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+        </div>
+
         <div id="control-panel">
-            <div class="panel-handle" id="panel-toggle">
-                <div class="panel-label">設定を開く</div>
+            <div class="panel-header">
+                <div class="panel-title">設定</div>
+                <button class="close-panel-btn" id="close-panel-btn">
+                    <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
             </div>
-            
-            <button class="close-panel-btn" id="close-panel-btn">
-                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" fill="none" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-                閉じる
-            </button>
             
             <div class="control-section">
                 <div class="section-title">センサーサイズ</div>
@@ -1027,7 +1202,7 @@
         const compass = document.getElementById('compass');
         const compassNeedle = compass.querySelector('.compass-needle');
 
-        // Initialize camera
+        // Initialize camera with high resolution
         async function initCamera() {
             try {
                 // Check if mediaDevices is supported
@@ -1035,20 +1210,34 @@
                     throw new Error('このブラウザはカメラAPIに対応していません');
                 }
 
-                // Try simpler constraints first for iOS compatibility
+                // Try high resolution first (4K > 1080p > fallback)
                 let stream;
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia({
-                        video: {
-                            facingMode: 'environment'
-                        }
-                    });
-                } catch (e) {
-                    // Fallback: try without facingMode
-                    console.log('Trying fallback camera constraints');
-                    stream = await navigator.mediaDevices.getUserMedia({
-                        video: true
-                    });
+                const resolutions = [
+                    { width: { ideal: 3840 }, height: { ideal: 2160 } }, // 4K
+                    { width: { ideal: 1920 }, height: { ideal: 1080 } }, // 1080p
+                    { width: { ideal: 1280 }, height: { ideal: 720 } },  // 720p
+                    {}  // Any resolution
+                ];
+
+                for (const resolution of resolutions) {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({
+                            video: {
+                                facingMode: 'environment',
+                                ...resolution
+                            }
+                        });
+                        console.log('Camera resolution:', resolution.width?.ideal || 'auto');
+                        break;
+                    } catch (e) {
+                        console.log('Resolution not available:', resolution.width?.ideal || 'auto');
+                        continue;
+                    }
+                }
+
+                if (!stream) {
+                    // Final fallback
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
                 }
                 
                 cameraFeed.srcObject = stream;
@@ -1654,131 +1843,65 @@
             });
         });
 
-        document.getElementById('panel-toggle').addEventListener('click', (e) => {
+        // Settings toggle button
+        document.getElementById('settings-toggle').addEventListener('click', (e) => {
             e.stopPropagation();
-            const panel = controlPanel;
-            const label = document.querySelector('.panel-label');
-            
-            panel.classList.toggle('open');
-            label.textContent = panel.classList.contains('open') ? '設定を閉じる' : '設定を開く';
+            controlPanel.classList.add('open');
         });
-        
+
         // Close button
         document.getElementById('close-panel-btn').addEventListener('click', (e) => {
             e.stopPropagation();
             controlPanel.classList.remove('open');
-            document.querySelector('.panel-label').textContent = '設定を開く';
         });
-        
+
         // Tap camera area to close panel when open
         document.getElementById('camera-container').addEventListener('click', (e) => {
-            if (controlPanel.classList.contains('open') && 
+            if (controlPanel.classList.contains('open') &&
                 !controlPanel.contains(e.target) &&
-                !document.getElementById('quick-actions').contains(e.target)) {
+                !document.getElementById('quick-actions').contains(e.target) &&
+                !document.getElementById('settings-toggle').contains(e.target)) {
                 controlPanel.classList.remove('open');
-                document.querySelector('.panel-label').textContent = '設定を開く';
             }
         });
-        
+
         // Prevent panel content clicks from closing
         controlPanel.addEventListener('click', (e) => {
             e.stopPropagation();
         });
-        
-        // Simple and reliable swipe gesture for panel
-        const panelHandle = document.getElementById('panel-toggle');
-        let startY = 0;
-        let currentY = 0;
-        let startTime = 0;
-        let panelWasOpen = false;
 
-        function openPanel() {
-            controlPanel.classList.add('open');
-            controlPanel.style.transform = '';
-            document.querySelector('.panel-label').textContent = '設定を閉じる';
-        }
-
-        function closePanel() {
-            controlPanel.classList.remove('open');
-            controlPanel.style.transform = '';
-            document.querySelector('.panel-label').textContent = '設定を開く';
-        }
-
-        // Handle tap on panel handle
-        panelHandle.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (controlPanel.classList.contains('open')) {
-                closePanel();
-            } else {
-                openPanel();
-            }
-        });
-
-        // Swipe on handle area
-        panelHandle.addEventListener('touchstart', (e) => {
-            startY = e.touches[0].clientY;
-            currentY = startY;
-            startTime = Date.now();
-            panelWasOpen = controlPanel.classList.contains('open');
-        }, { passive: true });
-
-        panelHandle.addEventListener('touchmove', (e) => {
-            currentY = e.touches[0].clientY;
-        }, { passive: true });
-
-        panelHandle.addEventListener('touchend', (e) => {
-            const deltaY = currentY - startY;
-            const deltaTime = Date.now() - startTime;
-            const velocity = deltaY / deltaTime; // positive = down, negative = up
-
-            // Detect swipe direction with velocity
-            if (Math.abs(deltaY) > 30 || Math.abs(velocity) > 0.3) {
-                if (velocity < -0.2 || deltaY < -50) {
-                    // Swipe up - open
-                    openPanel();
-                } else if (velocity > 0.2 || deltaY > 50) {
-                    // Swipe down - close
-                    closePanel();
-                }
-            }
-            // If not a clear swipe, tap handler will take care of it
-        });
-
-        // Swipe down on panel content to close (only when scrolled to top)
-        let panelScrollTop = 0;
-        let panelTouchStartY = 0;
-        let isPanelDragging = false;
+        // Swipe left on panel to close
+        let panelTouchStartX = 0;
+        let isPanelSwiping = false;
 
         controlPanel.addEventListener('touchstart', (e) => {
-            panelScrollTop = controlPanel.scrollTop;
-            panelTouchStartY = e.touches[0].clientY;
-            isPanelDragging = panelScrollTop <= 0;
+            panelTouchStartX = e.touches[0].clientX;
+            isPanelSwiping = true;
         }, { passive: true });
 
         controlPanel.addEventListener('touchmove', (e) => {
-            if (!isPanelDragging || !controlPanel.classList.contains('open')) return;
+            if (!isPanelSwiping || !controlPanel.classList.contains('open')) return;
 
-            const deltaY = e.touches[0].clientY - panelTouchStartY;
+            const deltaX = e.touches[0].clientX - panelTouchStartX;
 
-            // Only allow dragging down when at top
-            if (panelScrollTop <= 0 && deltaY > 0) {
+            // Only allow swiping right to close
+            if (deltaX > 0) {
                 controlPanel.style.transition = 'none';
-                controlPanel.style.transform = `translateY(${Math.min(deltaY * 0.6, 200)}px)`;
+                controlPanel.style.transform = `translateX(${Math.min(deltaX * 0.8, 200)}px)`;
             }
         }, { passive: true });
 
         controlPanel.addEventListener('touchend', (e) => {
-            if (!isPanelDragging) return;
+            if (!isPanelSwiping) return;
+            isPanelSwiping = false;
 
-            const deltaY = e.changedTouches[0].clientY - panelTouchStartY;
+            const deltaX = e.changedTouches[0].clientX - panelTouchStartX;
             controlPanel.style.transition = 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)';
 
-            if (deltaY > 100) {
-                closePanel();
-            } else {
-                controlPanel.style.transform = 'translateY(0)';
+            if (deltaX > 80) {
+                controlPanel.classList.remove('open');
             }
-            isPanelDragging = false;
+            controlPanel.style.transform = '';
         });
 
         document.getElementById('save-btn').addEventListener('click', () => {
@@ -1819,45 +1942,116 @@
         document.getElementById('time-display').textContent = 
             `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
         
-        // iOS requires user interaction for camera and sensors
-        let appStarted = false;
+        // Permission state
+        const permissions = {
+            camera: false,
+            orientation: false,
+            location: false
+        };
 
-        async function startApp() {
-            if (appStarted) return;
-            appStarted = true;
+        function updateStartButton() {
+            const startBtn = document.getElementById('start-app-btn');
+            // Camera is required, others are optional but recommended
+            if (permissions.camera) {
+                startBtn.disabled = false;
+                if (permissions.orientation && permissions.location) {
+                    startBtn.textContent = 'すべて許可済み - 開始';
+                } else {
+                    startBtn.textContent = 'アプリを開始';
+                }
+            }
+        }
 
-            // Request all permissions in sequence
+        // Camera permission button
+        document.getElementById('perm-camera').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
             try {
-                // 1. Camera
                 await initCamera();
-
-                // 2. Device orientation (compass)
-                await requestOrientationPermission();
-
-                // 3. Geolocation
-                getLocation();
-
+                permissions.camera = true;
+                btn.classList.add('granted');
+                btn.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> カメラ許可済み';
+                updateStartButton();
             } catch (error) {
-                console.error('Startup error:', error);
+                btn.classList.add('denied');
+                btn.innerHTML = '<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> カメラ拒否';
             }
-        }
+        });
 
-        // Start on first tap (required for iOS)
-        document.addEventListener('click', startApp, { once: true });
-        document.addEventListener('touchend', startApp, { once: true });
+        // Orientation permission button
+        document.getElementById('perm-orientation').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            try {
+                await requestOrientationPermission();
+                permissions.orientation = true;
+                btn.classList.add('granted');
+                btn.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> コンパス許可済み';
+                updateStartButton();
+            } catch (error) {
+                btn.classList.add('denied');
+                btn.innerHTML = '<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> コンパス不可';
+            }
+        });
 
-        // Try to start automatically on non-iOS
+        // Location permission button
+        document.getElementById('perm-location').addEventListener('click', async (e) => {
+            const btn = e.currentTarget;
+            try {
+                await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                            state.latitude = pos.coords.latitude;
+                            state.longitude = pos.coords.longitude;
+                            resolve(pos);
+                        },
+                        (err) => reject(err),
+                        { enableHighAccuracy: true, timeout: 10000 }
+                    );
+                });
+                permissions.location = true;
+                btn.classList.add('granted');
+                btn.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> 位置情報許可済み';
+                // Start watching location
+                getLocation();
+                updateStartButton();
+            } catch (error) {
+                btn.classList.add('denied');
+                btn.innerHTML = '<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> 位置情報拒否';
+            }
+        });
+
+        // Start button
+        document.getElementById('start-app-btn').addEventListener('click', () => {
+            if (permissions.camera) {
+                loading.style.display = 'none';
+                resizeCanvas();
+                updateFOV();
+                updateSunPosition();
+            }
+        });
+
+        // Try to auto-detect permissions on non-iOS
         if (!(/iPhone|iPad|iPod/.test(navigator.userAgent))) {
-            startApp();
+            // Try to start automatically
+            (async () => {
+                try {
+                    await initCamera();
+                    permissions.camera = true;
+                    document.getElementById('perm-camera').classList.add('granted');
+                    document.getElementById('perm-camera').innerHTML = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> カメラ許可済み';
+                    updateStartButton();
+                } catch (e) {}
+
+                // Orientation doesn't need permission on non-iOS
+                window.addEventListener('deviceorientation', handleOrientation, true);
+                if ('ondeviceorientationabsolute' in window) {
+                    window.addEventListener('deviceorientationabsolute', handleOrientationAbsolute, true);
+                }
+                permissions.orientation = true;
+                document.getElementById('perm-orientation').classList.add('granted');
+                document.getElementById('perm-orientation').innerHTML = '<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg> コンパス許可済み';
+                updateStartButton();
+            })();
         }
-        
-        // Auto-open control panel on first load
-        setTimeout(() => {
-            if (loading.style.display === 'none') {
-                controlPanel.classList.add('open');
-                document.querySelector('.panel-label').textContent = '設定を閉じる';
-            }
-        }, 2000);
     </script>
 </body>
 </html>
