@@ -266,44 +266,6 @@
             }
         }
 
-        /* Fullscreen button for landscape mode */
-        #fullscreen-btn {
-            position: absolute;
-            top: calc(env(safe-area-inset-top, 0px) + 8px);
-            right: calc(env(safe-area-inset-right, 0px) + 70px);
-            width: 40px;
-            height: 40px;
-            background: rgba(21, 21, 21, 0.85);
-            border: 2px solid var(--border);
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 50;
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            transition: all 0.2s;
-        }
-
-        #fullscreen-btn:active {
-            transform: scale(0.9);
-        }
-
-        #fullscreen-btn svg {
-            width: 20px;
-            height: 20px;
-            stroke: var(--text-primary);
-            fill: none;
-            stroke-width: 2;
-        }
-
-        @media (orientation: portrait) {
-            #fullscreen-btn {
-                display: none;
-            }
-        }
-
         /* Frame overflow indicator */
         .frame-overflow-indicator {
             position: absolute;
@@ -1074,16 +1036,6 @@
 
         <div id="sun-indicator"></div>
 
-        <!-- Fullscreen button for hiding Safari toolbar -->
-        <div id="fullscreen-btn" title="フルスクリーン">
-            <svg viewBox="0 0 24 24">
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <polyline points="9 21 3 21 3 15"></polyline>
-                <line x1="21" y1="3" x2="14" y2="10"></line>
-                <line x1="3" y1="21" x2="10" y2="14"></line>
-            </svg>
-        </div>
-
         <!-- Frame overflow indicators -->
         <div id="frame-overflow-top" class="frame-overflow-indicator top" style="display: none;"></div>
         <div id="frame-overflow-bottom" class="frame-overflow-indicator bottom" style="display: none;"></div>
@@ -1305,9 +1257,9 @@
             latitude: 35.6762, // Default to Tokyo
             longitude: 139.6503,
             timezoneOffset: new Date().getTimezoneOffset(), // minutes from UTC
-            // Compass smoothing
+            // Compass smoothing (larger history for stability when phone is vertical)
             headingHistory: [],
-            headingHistorySize: 5,
+            headingHistorySize: 10,
             // Magnetic declination (will be calculated based on location)
             magneticDeclination: 7.5, // Default for Tokyo area (degrees East)
             // iPhone camera settings
@@ -2020,46 +1972,54 @@
 
             // Get compass heading
             // iOS provides webkitCompassHeading (degrees from TRUE north, 0-360)
-            // Note: iOS webkitCompassHeading already accounts for magnetic declination
+            // This heading points to the TOP of the device
             if (event.webkitCompassHeading !== undefined && event.webkitCompassHeading !== null) {
-                // iOS: webkitCompassHeading is degrees from TRUE north (not magnetic)
                 rawHeading = event.webkitCompassHeading;
                 state.hasCompass = true;
             } else if (event.alpha !== null) {
                 // Android/fallback: alpha is rotation around z-axis
-                // This gives MAGNETIC north, so we need to apply declination
                 if (event.absolute) {
                     rawHeading = (360 - event.alpha) % 360;
                 } else {
                     rawHeading = (360 - event.alpha) % 360;
                 }
-                // Apply magnetic declination for true north
                 rawHeading = (rawHeading + state.magneticDeclination + 360) % 360;
                 state.hasCompass = true;
             }
 
             // LANDSCAPE MODE CORRECTION:
-            // When phone is in landscape mode (rotated 90 degrees), the compass heading
-            // needs to be adjusted because the camera is now pointing in a different direction
-            // than the "top" of the phone.
-            // Check if we're in landscape mode by looking at gamma (left-right tilt)
-            // In landscape-right (home button on right): gamma is around -90
-            // In landscape-left (home button on left): gamma is around +90
+            // webkitCompassHeading points to the TOP of the device
+            // In landscape mode, we need the heading where the CAMERA (back) is pointing
+            // Use screen.orientation API for reliable detection
             const isLandscape = window.innerWidth > window.innerHeight;
+
             if (isLandscape) {
-                // Detect which landscape orientation
-                // gamma > 45 means landscape-left (home button on left)
-                // gamma < -45 means landscape-right (home button on right)
-                if (state.gamma > 45) {
-                    // Landscape-left: camera points 90° counter-clockwise from phone top
+                // Detect screen orientation type
+                let orientationType = '';
+                if (screen.orientation && screen.orientation.type) {
+                    orientationType = screen.orientation.type;
+                } else if (window.orientation !== undefined) {
+                    // Fallback for older iOS
+                    orientationType = window.orientation === 90 ? 'landscape-primary' :
+                                     window.orientation === -90 ? 'landscape-secondary' : '';
+                }
+
+                // In landscape mode, webkitCompassHeading points to the device TOP
+                // We need to convert to where the CAMERA (back) is pointing
+                // landscape-primary (90°): volume buttons UP, device top on LEFT
+                //   -> camera direction is 90° CLOCKWISE from top = heading + 90°
+                // landscape-secondary (-90°): volume buttons DOWN, device top on RIGHT
+                //   -> camera direction is 90° COUNTER-CLOCKWISE from top = heading - 90°
+                if (orientationType.includes('landscape-primary') || window.orientation === 90) {
+                    // Volume buttons UP - camera is 90° clockwise from device top
                     rawHeading = (rawHeading + 90) % 360;
-                } else if (state.gamma < -45) {
-                    // Landscape-right: camera points 90° clockwise from phone top
+                } else if (orientationType.includes('landscape-secondary') || window.orientation === -90) {
+                    // Volume buttons DOWN - camera is 90° counter-clockwise from device top
                     rawHeading = (rawHeading - 90 + 360) % 360;
                 }
             }
 
-            // Apply smoothing to reduce jitter
+            // Apply smoothing to reduce jitter (increased history for stability)
             state.heading = smoothHeading(rawHeading);
 
             // Update compass display
@@ -2284,34 +2244,6 @@
             state.showTrajectory = !state.showTrajectory;
             e.currentTarget.classList.toggle('active');
             updateSunTrajectory();
-        });
-
-        // Fullscreen button - helps hide Safari toolbar in landscape
-        document.getElementById('fullscreen-btn').addEventListener('click', async () => {
-            const elem = document.documentElement;
-
-            try {
-                if (document.fullscreenElement || document.webkitFullscreenElement) {
-                    // Exit fullscreen
-                    if (document.exitFullscreen) {
-                        await document.exitFullscreen();
-                    } else if (document.webkitExitFullscreen) {
-                        document.webkitExitFullscreen();
-                    }
-                } else {
-                    // Enter fullscreen
-                    if (elem.requestFullscreen) {
-                        await elem.requestFullscreen();
-                    } else if (elem.webkitRequestFullscreen) {
-                        // iOS Safari doesn't support fullscreen API, but this is for other browsers
-                        elem.webkitRequestFullscreen();
-                    }
-                }
-            } catch (err) {
-                // Fullscreen not supported (especially on iOS Safari)
-                // Show a helpful message
-                alert('フルスクリーンはこのブラウザでサポートされていません。\\n\\nSafariのツールバーを最小化するには：\\n• 下にスクロールするとツールバーが隠れます\\n• または「ホーム画面に追加」してWebアプリとして使用してください');
-            }
         });
 
         document.getElementById('time-slider').addEventListener('input', (e) => {
